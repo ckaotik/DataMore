@@ -6,7 +6,7 @@
 
 ## Dependencies: DataStore
 ## OptionalDeps: DataStore_Characters, DataStore_Achievements, DataStore_Auctions, DataStore_Containers, DataStore_Crafts, DataStore_Currencies, DataStore_Inventory, DataStore_Mails, DataStore_Pets, DataStore_Quests, DataStore_Reputations, DataStore_Spells, DataStore_Stats, DataStore_Talents
-## SavedVariables: DataMore_LockoutsDB, DataMore_WeekliesDB, DataMore_TalentsDB
+## SavedVariables: DataMore_LockoutsDB, DataMore_WeekliesDB, DataMore_TalentsDB, DataMore_QuestsDB
 
 ## X-Category: Misc
 ## X-License: BSD
@@ -19,5 +19,7 @@ DataMore.lua
 
 # modules
 modules\lockouts.lua
+#modules\mails.lua
 modules\talents.lua
 modules\weeklies.lua
+modules\quests.lua
