@@ -22,22 +22,25 @@ local AddonDB_Defaults = {
 local function _GetAchievementProgress(character, achievementID)
 	local characterKey = type(character) == 'string' and character or character.key
 
-	local isShared = nil
+	local _, _, _, completed, _, _, _, _, flags = GetAchievementInfo(achievementID)
+	local isShared = bit.band(flags, ACHIEVEMENT_FLAGS_ACCOUNT) == ACHIEVEMENT_FLAGS_ACCOUNT
+
 	local achievementProgress = 0
 	local achievementGoal = 0
 
 	for index = 1, GetAchievementNumCriteria(achievementID) do
-		local _, _, _, _, requiredQuantity = GetAchievementCriteriaInfo(achievementID, index)
-		local critStarted, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, isShared)
-		if not critStarted and not isShared then
-			critStarted, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, true)
-			isShared = critStarted
+		local _, _, _, _, requiredQuantity,_, _, _, quantityString = GetAchievementCriteriaInfo(achievementID, index)
+		local requiredQuantityString = tonumber( quantityString:match('/%s*(%d+)') or '' )
+		if requiredQuantityString and requiredQuantityString ~= requiredQuantity then
+			-- fix currencies being multiplied by 100
+			requiredQuantity = requiredQuantityString
 		end
 
+		local _, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, isShared)
 		achievementProgress = achievementProgress + (critCompleted and requiredQuantity or progress or 0)
 		achievementGoal     = achievementGoal + requiredQuantity
 	end
-	return achievementProgress, achievementGoal
+	return achievementProgress, achievementGoal, isShared
 end
 
 local function GetReputationProgress(character, faction, minReputation)
@@ -69,6 +72,9 @@ local progressHandler = {
 	[32592] = { -- i need a champion (exhalted)
 		[1] = {GetReputationProgress, 1359, 42000}
 	},
+	[33342] = { -- Drive Back The Flame (shaohao honored)
+		[1] = {GetReputationProgress, 1492, 9000}
+	},
 }
 
 local function _GetQuestProgress(character, questID)
@@ -77,6 +83,7 @@ end
 
 local function _GetQuestProgressPercentage(character, questID)
 	local data = _GetQuestProgress(character, questID)
+
 	local current, max = 0, 0
 	for criteriaIndex, criteriaProgress in ipairs(data) do
 		local critCurrent, critMax
@@ -157,6 +164,11 @@ function addon:OnInitialize()
 	DataStore:SetCharacterBasedMethod('GetQuestProgress')
 	DataStore:SetCharacterBasedMethod('GetQuestProgressPercentage')
 	DataStore:SetCharacterBasedMethod('GetAchievementProgress')
+
+	ns.RegisterOverrides(addonName, addon, PublicMethods)
+	ns.SetCharacterBasedMethod('GetAchievementProgress')
+	ns.SetCharacterBasedMethod('GetQuestProgress')
+	ns.SetCharacterBasedMethod('GetQuestProgressPercentage')
 end
 
 function addon:OnEnable()
