@@ -109,8 +109,8 @@ local function _GetCurrencyCapInfo(character, currencyID, characterKey)
 	return currentAmount, totalMax, weeklyAmount, weeklyMax
 end
 
-local function _IsWeeklyQuestCompletedBy(character, questID, characterKey)
-	if not IsAddOnLoaded('DataStore_Quests') then return end
+local function _IsWeeklyQuestCompletedBy(character, questID)
+	local characterKey = type(character) == 'string' and character or character.key
 	local _, lastUpdate = DataStore:GetQuestHistoryInfo(characterKey)
 	local lastMaintenance = ns.GetLastMaintenance()
 	if not (lastUpdate and lastMaintenance) or lastUpdate < lastMaintenance then
@@ -138,6 +138,11 @@ function addon:OnInitialize()
 	for funcName, funcImpl in pairs(PublicMethods) do
 		DataStore:SetCharacterBasedMethod(funcName)
 	end
+
+	ns.RegisterOverrides(addonName, addon, {
+		IsWeeklyQuestCompletedBy = _IsWeeklyQuestCompletedBy
+	})
+	ns.SetCharacterBasedMethod('IsWeeklyQuestCompletedBy')
 end
 
 function addon:OnEnable()
