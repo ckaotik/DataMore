@@ -83,17 +83,17 @@ local lookupMethods = {
 			return origMetatable.__index(origMetatable, methodName)
 		end
 
-		local owner = RegisteredOverrides[methodName].owner
-		-- we'll provide module's data table but add in the originally requested key
-
 		return function(self, arg1, ...)
 			local dataTable
-			if owner.isCharBased then
-				dataTable = owner.Characters[arg1]
+			local method = RegisteredOverrides[methodName]
+			-- we'll provide module's data table but add in the originally requested key
+
+			if method.isCharBased then
+				dataTable = method.owner.Characters[arg1]
 				dataTable.key = arg1
 				if not dataTable.lastUpdate then return end
-			elseif owner.isGuildBased then
-				dataTable = owner.Guilds[arg1]
+			elseif method.isGuildBased then
+				dataTable = method.owner.Guilds[arg1]
 				dataTable.key = arg1
 				if not dataTable then return end
 			end
