@@ -247,7 +247,7 @@ local PublicMethods = {
 	GetSpecialization = _GetSpecialization,
 	GetNumUnspentTalents = _GetNumUnspentTalents,
 	GetGlyphLink = _GetGlyphLink,
-	GetGlyphInfo = _GetGlyphInfo,
+	-- GetGlyphInfo = _GetGlyphInfo,
 	GetGlyphInfoByID = _GetGlyphInfoByID,
 	IsGlyphKnown = _IsGlyphKnown,
 }
@@ -256,12 +256,14 @@ function addon:OnInitialize()
 	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
 
 	DataStore:RegisterModule(addonName, addon, {})
-	ns.RegisterOverrides(addonName, addon, PublicMethods)
-	ns.SetCharacterBasedMethod("GetTalentRank")
-	ns.SetCharacterBasedMethod("GetSpecialization")
-	ns.SetCharacterBasedMethod("GetNumUnspentTalents")
-	ns.SetCharacterBasedMethod("GetGlyphInfo")
-	ns.SetCharacterBasedMethod("IsGlyphKnown")
+	for methodName, method in pairs(PublicMethods) do
+		ns.RegisterOverride(addon, methodName, method)
+	end
+	ns.SetOverrideType("GetTalentRank", 'character')
+	ns.SetOverrideType("GetSpecialization", 'character')
+	ns.SetOverrideType("GetNumUnspentTalents", 'character')
+	-- ns.SetOverrideType("GetGlyphInfo", 'character')
+	ns.SetOverrideType("IsGlyphKnown", 'character')
 
 	ScanTalents()
 end

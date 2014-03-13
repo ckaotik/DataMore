@@ -3,7 +3,11 @@ local addonName, ns = ...
 -- GLOBALS: GetCVar, GetQuestResetTime
 -- GLOBALS: assert ,format, pairs, string, time, date, tonumber
 
-local initialize -- forward declaration
+local initialize = function()
+	-- expose this addon
+	_G[addonName] = ns
+end
+
 local frame, eventHooks = CreateFrame("Frame"), {}
 local function eventHandler(frame, event, arg1, ...)
 	if event == 'ADDON_LOADED' and arg1 == addonName then
@@ -43,39 +47,62 @@ end
 --  Overriding some existing modules
 -- ========================================================
 local RegisteredOverrides = {}
-function ns.RegisterOverrides(moduleName, module, publicMethods)
-	for methodName, method in pairs(publicMethods) do
-		RegisteredOverrides[methodName] = {
-			func = method,
-			owner = module,
-		}
+-- allows overriding DataStore methods
+function ns.RegisterOverride(module, methodName, method, methodType)
+	RegisteredOverrides[methodName] = {
+		func  = method,
+		owner = module,
+		isCharBased  = methodType and methodType == 'character',
+		isGuildBased = methodType and methodType == 'guild',
+	}
+end
+function ns.SetOverrideType(methodName, methodType)
+	local override = RegisteredOverrides[methodName]
+	assert(override, 'No method registered to name "'..methodName..'"')
+	override.isCharBased = methodType == 'character'
+	override.isGuildBased = methodType == 'guild'
+end
+-- returns (by reference!) method and module of override, nil if no such override exists
+function ns.GetOverride(methodName)
+	local override = RegisteredOverrides[methodName]
+	if override then
+		return override.func, override.owner
 	end
 end
-function ns.SetCharacterBasedMethod(methodName)
-	if RegisteredOverrides[methodName] then
-		RegisteredOverrides[methodName].isCharBased = true
+function ns.IsAvailable(methodName)
+	if ns.GetOverride(methodName) then
+		return true
 	end
+	-- TODO:
 end
-local origMetatable = getmetatable(DataStore)
+
+local origMetatable = getmetatable(_G.DataStore)
 local lookupMethods = {
-	__index = function(self, key)
-		if not RegisteredOverrides[key] then
-			return origMetatable.__index(origMetatable, key)
+	__index = function(self, methodName)
+		if not RegisteredOverrides[methodName] then
+			return origMetatable.__index(origMetatable, methodName)
 		end
 
+		local owner = RegisteredOverrides[methodName].owner
+		-- we'll provide module's data table but add in the originally requested key
+
 		return function(self, arg1, ...)
-			if RegisteredOverrides[key].isCharBased then
-				local owner = RegisteredOverrides[key].owner
-				local charKey = arg1
-				arg1 = owner.Characters[arg1]
-				arg1.key = charKey
-				if not arg1.lastUpdate then return end
+			local dataTable
+			if owner.isCharBased then
+				dataTable = owner.Characters[arg1]
+				dataTable.key = arg1
+				if not dataTable.lastUpdate then return end
+			elseif owner.isGuildBased then
+				dataTable = owner.Guilds[arg1]
+				dataTable.key = arg1
+				if not dataTable then return end
 			end
-			return RegisteredOverrides[key].func(arg1, ...)
+			return RegisteredOverrides[methodName].func(dataTable or arg1, ...)
 		end
 	end
 }
-setmetatable(DataStore, lookupMethods)
+-- this is where we actually touch DataStore's internals
+setmetatable(_G.DataStore, lookupMethods)
 
 -- ========================================================
 --  Functions required by modules

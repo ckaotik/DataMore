@@ -165,10 +165,9 @@ function addon:OnInitialize()
 	DataStore:SetCharacterBasedMethod('GetQuestProgressPercentage')
 	DataStore:SetCharacterBasedMethod('GetAchievementProgress')
 
-	ns.RegisterOverrides(addonName, addon, PublicMethods)
-	ns.SetCharacterBasedMethod('GetAchievementProgress')
-	ns.SetCharacterBasedMethod('GetQuestProgress')
-	ns.SetCharacterBasedMethod('GetQuestProgressPercentage')
+	for methodName, method in pairs(PublicMethods) do
+		ns.RegisterOverride(addon, methodName, method, 'character')
+	end
 end
 
 function addon:OnEnable()

@@ -139,10 +139,8 @@ function addon:OnInitialize()
 		DataStore:SetCharacterBasedMethod(funcName)
 	end
 
-	ns.RegisterOverrides(addonName, addon, {
-		IsWeeklyQuestCompletedBy = _IsWeeklyQuestCompletedBy
-	})
-	ns.SetCharacterBasedMethod('IsWeeklyQuestCompletedBy')
+	-- we need this as an override, since we need access to the characterKey
+	ns.RegisterOverride(addon, 'IsWeeklyQuestCompletedBy', _IsWeeklyQuestCompletedBy, 'character')
 end
 
 function addon:OnEnable()
