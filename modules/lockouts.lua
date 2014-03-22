@@ -34,6 +34,7 @@ local LFGInfos = {
 -- LFG_SUBTYPEID_DUNGEON, LFG_SUBTYPEID_HEROIC, LFG_SUBTYPEID_RAID, LFG_SUBTYPEID_SCENARIO
 
 local function UpdateLFGStatus()
+	-- TODO: group data by dungeon?
 	local playerLevel = UnitLevel("player")
 
 	local lfgs = addon.ThisCharacter.LFGs

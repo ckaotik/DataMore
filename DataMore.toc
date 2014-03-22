@@ -13,6 +13,9 @@
 
 # libraries
 #libs\LibStub.lua
+libs\LibDataStorage-1.0\LibStub.lua
+libs\LibDataStorage-1.0\CallbackHandler-1.0.lua
+libs\LibDataStorage-1.0\LibDataStorage-1.0.lua
 
 # core
 DataMore.lua

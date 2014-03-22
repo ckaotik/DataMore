@@ -1,0 +1,11 @@
+## Interface: 50400
+## LoadOnDemand: 1
+## Title: LibDataStorage-1.0
+## Version: @project-version@
+## X-Date: @project-date@
+## Notes: Wrapper to easily and efficiently store different kinds of data to variables
+## Author: ckaotik
+
+LibStub.lua
+CallbackHandler-1.0.lua
+LibDataStorage-1.0.lua
