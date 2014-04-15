@@ -37,9 +37,16 @@ local function UpdateEquipmentSet(setName, setIcon)
 
 			if not itemLink then
 				-- item link not available, use generic
-				-- TODO: don't overwrite links if same itemID
 				local itemID = EquipmentManager_GetItemInfoByLocation(location)
-				_, itemLink = GetItemInfo(itemID)
+				local oldItem = sets[setName][slotID]
+				local oldItemID = oldItem and addon.GetLinkID(oldItem)
+
+				if oldItemID and oldItemID == itemID then
+					-- the item is the same, reuse old link
+					itemLink = oldItem
+				else
+					_, itemLink = GetItemInfo(itemID)
+				end
 			end
 			sets[setName][slotID] = itemLink
 		end

@@ -1,12 +1,12 @@
-local addonName, ns = ...
+local addonName, addon = ...
 
 -- GLOBALS: GetCVar, GetQuestResetTime
 -- GLOBALS: assert ,format, pairs, string, time, date, tonumber
-LibStub('AceAddon-3.0'):NewAddon(ns, addonName)
+LibStub('AceAddon-3.0'):NewAddon(addon, addonName)
 
 local initialize = function()
 	-- expose this addon
-	_G[addonName] = ns
+	-- _G[addonName] = addon
 end
 
 local frame, eventHooks = CreateFrame("Frame"), {}
@@ -23,9 +23,10 @@ local function eventHandler(frame, event, arg1, ...)
 	end
 end
 frame:SetScript("OnEvent", eventHandler)
-ns.events = frame
+addon.events = frame
 
-function ns.RegisterEvent(event, callback, id, silentFail)
+-- TODO: replace with AceEvent
+function addon.RegisterEvent(event, callback, id, silentFail)
 	assert(callback and event and id, format("Usage: RegisterEvent(event, callback, id[, silentFail])"))
 	if not eventHooks[event] then
 		eventHooks[event] = {}
@@ -35,10 +36,10 @@ function ns.RegisterEvent(event, callback, id, silentFail)
 
 	eventHooks[event][id] = callback
 end
-function ns.UnregisterEvent(event, id)
+function addon.UnregisterEvent(event, id)
 	if not eventHooks[event] or not eventHooks[event][id] then return end
 	eventHooks[event][id] = nil
-	if ns.Count(eventHooks[event]) < 1 then
+	if addon.Count(eventHooks[event]) < 1 then
 		eventHooks[event] = nil
 		frame:UnregisterEvent(event)
 	end
@@ -49,7 +50,7 @@ end
 -- ========================================================
 local RegisteredOverrides = {}
 -- allows overriding DataStore methods
-function ns.RegisterOverride(module, methodName, method, methodType)
+function addon.RegisterOverride(module, methodName, method, methodType)
 	RegisteredOverrides[methodName] = {
 		func  = method,
 		owner = module,
@@ -57,21 +58,21 @@ function ns.RegisterOverride(module, methodName, method, methodType)
 		isGuildBased = methodType and methodType == 'guild',
 	}
 end
-function ns.SetOverrideType(methodName, methodType)
+function addon.SetOverrideType(methodName, methodType)
 	local override = RegisteredOverrides[methodName]
 	assert(override, 'No method registered to name "'..methodName..'"')
 	override.isCharBased = methodType == 'character'
 	override.isGuildBased = methodType == 'guild'
 end
 -- returns (by reference!) method and module of override, nil if no such override exists
-function ns.GetOverride(methodName)
+function addon.GetOverride(methodName)
 	local override = RegisteredOverrides[methodName]
 	if override then
 		return override.func, override.owner
 	end
 end
-function ns.IsAvailable(methodName)
-	if ns.GetOverride(methodName) then
+function addon.IsAvailable(methodName)
+	if addon.GetOverride(methodName) then
 		return true
 	end
 	-- TODO:
@@ -109,7 +110,7 @@ setmetatable(_G.DataStore, lookupMethods)
 --  Functions required by modules
 -- ========================================================
 local lastMaintenance, nextMaintenance
-function ns.GetLastMaintenance()
+function addon.GetLastMaintenance()
 	if not lastMaintenance then
 		local region = string.lower( GetCVar('portal') or '' )
 		local maintenanceWeekDay = (region == 'us' and 2) -- tuesday
@@ -131,14 +132,23 @@ function ns.GetLastMaintenance()
 	end
 	return lastMaintenance
 end
-function ns.GetNextMaintenance()
+function addon.GetNextMaintenance()
 	if nextMaintenance then
 		return nextMaintenance
 	else
-		local lastMaintenance = ns.GetLastMaintenance()
+		local lastMaintenance = addon.GetLastMaintenance()
 		if lastMaintenance then
 			nextMaintenance = lastMaintenance + 7*24*60*60
 		end
 	end
 	return nextMaintenance
+end
+
+function addon.GetLinkID(link)
+	if not link or type(link) ~= "string" then return end
+	local linkType, id = link:match("\124H([^:]+):([^:\124]+)")
+	if not linkType then
+		linkType, id = link:match("([^:\124]+):([^:\124]+)")
+	end
+	return tonumber(id), linkType
 end
