@@ -2,6 +2,7 @@ local addonName, ns = ...
 
 -- GLOBALS: GetCVar, GetQuestResetTime
 -- GLOBALS: assert ,format, pairs, string, time, date, tonumber
+LibStub('AceAddon-3.0'):NewAddon(ns, addonName)
 
 local initialize = function()
 	-- expose this addon
