@@ -91,8 +91,12 @@ local function _GetEquipmentSet(character, setName)
 	return setName, set.icon, set
 end
 
-local function _GetEquipmentSetItem(character, setID, slotID)
-	return character.equipmentSets[setID][slotID]
+local function _GetEquipmentSetItem(character, setName, slotID)
+	return character.equipmentSets[setName][slotID]
+end
+
+local function _GetEquipmentSetItems(character, setName)
+	return character.equipmentSets[setName]
 end
 
 function equipment:OnInitialize()
@@ -112,12 +116,14 @@ function equipment:OnInitialize()
 		GetEquipmentSetNames = _GetEquipmentSetNames,
 		GetEquipmentSet = _GetEquipmentSet,
 		GetEquipmentSetItem = _GetEquipmentSetItem,
+		GetEquipmentSetItems = _GetEquipmentSetItems,
 	})
 	-- TODO: sort out actual API and db structure
 	DataStore:SetCharacterBasedMethod('GetNumEquipmentSets')
 	DataStore:SetCharacterBasedMethod('GetEquipmentSetNames')
 	DataStore:SetCharacterBasedMethod('GetEquipmentSet')
 	DataStore:SetCharacterBasedMethod('GetEquipmentSetItem')
+	DataStore:SetCharacterBasedMethod('GetEquipmentSetItems')
 end
 function equipment:OnEnable()
 	self:RegisterEvent('BANKFRAME_OPENED', UpdateEquipmentSets)
