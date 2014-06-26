@@ -1,36 +1,87 @@
-local addonName, ns = ...
+local addonName, ns, _ = ...
 
--- GLOBALS: _G, DataStore, LibStub, UIParent
--- GLOBALS:GetTalentInfo, GetTalentLink, GetNumClasses, GetClassInfo, GetSpecializationInfoForClassID, UnitLevel, UnitClass, GetActiveSpecGroup, GetMaxTalentTier, GetSpecialization
--- GLOBALS: type, math, strsplit, tonumber, format, time, wipe
+-- TODO: Check glyph scan events
+-- TODO: split into talents + glyphs
+
+-- GLOBALS: _G, DataStore, LibStub
+-- GLOBALS: GetTalentInfo, GetTalentLink, GetNumClasses, GetClassInfo, GetSpecializationInfoForClassID, UnitLevel, UnitClass, GetActiveSpecGroup, GetMaxTalentTier, GetSpecialization, GetItemInfo, GetNumSpecGroups, GetNumGlyphSockets, GetSpecializationInfo, GetTalentRowSelectionInfo
+-- GLOBALS: type, math, strsplit, tonumber, format, time, wipe, rawget, rawset, select, ipairs, pairs, table, strjoin, unpack
+local rshift, band = bit.rshift, bit.band
 
 local addonName  = "DataMore_Talents"
-   _G[addonName] = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
-local addon = _G[addonName]
+local addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
+_G[addonName] = addon
 
 local AddonDB_Defaults = {
 	global = {
 		Characters = {
-			['*'] = {				-- ["Account.Realm.Name"]
+			['*'] = { -- character key, e.g. "Account.Realm.Name"
 				lastUpdate = nil,
-				ActiveTalents = nil,		-- 1 for primary, 2 for secondary
-				Class = nil,				-- englishClass
-				TalentTrees = {},
+				active = nil,
+				specs = '',
+				talents1 = '',
+				talents2 = '',
+
+				glyphs = {},
+				knownGlyphs = {},
 			}
-		}
+		},
+		Glyphs = {
+			['*'] = {}, -- class, e.g. "DRUID"
+		},
 	}
 }
 
--- *** Utility functions ***
-local LeftShift, RightShift, bAnd = bit.lshift, bit.rshift, bit.band
-local talentsPerTier = NUM_TALENT_COLUMNS
+-- == Talent Scanning =====================================
+local classIDs = setmetatable({}, {
+	__index = function(self, class)
+		local classID = rawget(self, class)
+		if classID then return classID end
 
-local scanTooltip = CreateFrame("GameTooltip", "DataStoreScanTooltip", nil, "GameTooltipTemplate")
+		for i = 1, GetNumClasses() do
+			local _, checkClass, classID = GetClassInfo(i)
+			if checkClass == class then
+				class = classID
+				break
+			end
+		end
+
+		if classID then
+			rawset(self, class, classID)
+			return classID
+		end
+	end
+})
+
+local function ScanTalents()
+	local data = addon.ThisCharacter
+	local specs = {}
+
+	for specNum = 1, GetNumSpecGroups() do
+		local specialization = GetSpecialization(nil, nil, specNum)
+		local specID = specialization and GetSpecializationInfo(specialization) or nil
+		table.insert(specs, specID)
+
+		local talents = {}
+		for tier = 1, GetMaxTalentTier() do
+			local isUnspent, selection = GetTalentRowSelectionInfo(tier)
+			table.insert(talents, selection or 0)
+		end
+		data['talents'..specNum] = strjoin('|', unpack(talents))
+	end
+
+	data.active = GetActiveSpecGroup()
+	data.specs = strjoin('|', unpack(specs))
+	data.lastUpdate = time()
+end
+
+-- == Glyph Scanning ======================================
+local scanTooltip = CreateFrame('GameTooltip', 'DataStoreScanTooltip', nil, 'GameTooltipTemplate')
 local glyphNameByID = setmetatable({}, {
 	__index = function(self, id)
-		scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-		scanTooltip:SetHyperlink("glyph:"..id)
-		local name = _G[scanTooltip:GetName().."TextLeft1"]:GetText()
+		scanTooltip:SetOwner(_G.UIParent, 'ANCHOR_NONE')
+		scanTooltip:SetHyperlink('glyph:'..id)
+		local name = _G[scanTooltip:GetName()..'TextLeft1']:GetText()
 		scanTooltip:Hide()
 		if name then
 			self[id] = name
@@ -39,71 +90,242 @@ local glyphNameByID = setmetatable({}, {
 	end
 })
 
--- *** Scanning functions ***
-local function ScanTalents()
-	local level = UnitLevel("player")
-	if not level or level < 10 then return end		-- don't scan anything for low level characters
+local function ScanGlyphs()
+	local data = addon.ThisCharacter
+	wipe(data.glyphs)
 
-	local char = addon.ThisCharacter
-	local _, englishClass = UnitClass("player")
-
-	char.ActiveTalents = GetActiveSpecGroup()			-- returns 1 or 2
-	char.Class = englishClass
-
-	wipe(char.TalentTrees)
-
-	local attrib, offset
-	for specNum = 1, 2 do												-- primary and secondary specs
-		attrib = 0
-		offset = 0
-
-		local specialization = GetSpecialization(nil, nil, specNum)
-		local unspentTalents = 0
-
-		for tier = 1, GetMaxTalentTier() do
-			local selected, isSelected, isAvailable, _
-			local talentOffset = (tier-1)*talentsPerTier
-			for talent = 1, talentsPerTier do
-				_, _, _, _, isSelected, isAvailable = GetTalentInfo(talentOffset + talent, nil, specNum)
-				selected = selected or (isSelected and talentOffset + talent)
+	for specNum = 1, GetNumSpecGroups() do
+		for socket = 1, GetNumGlyphSockets() do
+			local isAvailable, glyphType, tooltipIndex, spellID, icon, glyphID = GetGlyphSocketInfo(socket, specNum)
+			if not isAvailable then
+				data.glyphs[socket] = ''
+			elseif not glyphID then
+				data.glyphs[socket] = '0'
+			else
+				data.glyphs[socket] = strjoin('|', glyphID, spellID or '')
 			end
-
-			if isAvailable and not selected then
-				unspentTalents = unspentTalents + 1
-			end
-
-			-- bits 0-2 = tier 1
-			-- bits 3-5 = tier 2
-			-- etc..
-			attrib = attrib + LeftShift((isAvailable or selected ~= 0) and 1 or 0, offset)
-			attrib = attrib + LeftShift(((selected or 0) - 1)%3 + 1, offset+1)
-
-			offset = offset + 3 -- each tier takes 3 bits (1 available + 2 selection)
 		end
-
-		char["Spec" .. specNum] = format("%d|%d", specialization, unspentTalents)
-		char["Talents" .. specNum] = attrib
 	end
-
-	char.lastUpdate = time()
 end
 
-local function GetClassIDFromName(class)
-	if type(class) == "string" then
-		for i=1,GetNumClasses() do
-			local _, checkClass, classID = GetClassInfo(i)
-			if checkClass == class then
-				class = classID
+local function ScanGlyphList()
+	-- Blizzard provides no GetGlyphInfo(glyphID) function so we need to store all this data ourselves
+	local data = addon.ThisCharacter
+	-- data.knownGlyphs = 0
+	if type(data.knownGlyphs) ~= 'table' then data.knownGlyphs = {} end
+	wipe(data.knownGlyphs)
+
+	local _, class = UnitClass('player')
+	local glyphs = addon.db.global.Glyphs[class]
+	wipe(glyphs)
+
+	-- show all glyphs for scanning
+	for _, filter in pairs({_G.GLYPH_FILTER_KNOWN, _G.GLYPH_FILTER_UNKNOWN, _G.GLYPH_TYPE_MAJOR, _G.GLYPH_TYPE_MINOR}) do
+		if not IsGlyphFlagSet(filter) then
+			ToggleGlyphFilter(filter)
+		end
+	end
+
+	-- scan
+	for index = 1, GetNumGlyphs() do
+		local name, glyphType, isKnown, icon, glyphID, link, specNames = GetGlyphInfo(index)
+		local glyphData
+		if glyphID then
+			local texture = icon:sub(17) -- strip 'Interface\\Icons\\'
+			glyphs[glyphID] = strjoin('|', index, glyphType, glyphID, texture, specNames)
+		end
+
+		if glyphID and isKnown then
+			-- data.knownGlyphs = data.knownGlyphs + bit.lshift(1, index-1)
+			data.knownGlyphs[glyphID] = true
+		end
+	end
+
+	-- TODO: restore previous filters
+end
+
+-- == Specialization API ==================================
+-- returns the specialization id (3 digits) as used by API functions
+local function _GetSpecializationID(character, specNum)
+	local spec1, spec2 = strsplit('|', character.specs)
+	return tonumber((specNum or character.active) == 1 and spec1 or spec2)
+end
+
+-- returns the specialization index (1-4)
+local function _GetSpecialization(character, specNum)
+	specNum = specNum or character.active
+
+	local specializationID = _GetSpecializationID(character, specNum)
+	for specIndex = 1, 4 do -- GetNumSpecializations()
+		local specID = GetSpecializationInfo(specIndex)
+		if specID == specializationID then
+			return specIndex
+		end
+	end
+end
+
+-- == Talents API =========================================
+local function _GetNumUnspentTalents(character, specNum)
+	specNum = specNum or character.active
+	local numUnspent = 0
+
+	local tiers = { strsplit('|', character['talents'..specNum]) }
+	for tier, selection in ipairs(tiers) do
+		if selection == 0 then
+			numUnspent = numUnspent + 1
+		end
+	end
+	return numUnspent
+end
+
+local function _GetTalentSelection(character, tier, specNum)
+	specNum = specNum or character.active
+	local talentID = select(tier, strsplit('|', character['talents'..specNum]))
+	      talentID = tonumber(talentID or '')
+	return talentID
+end
+
+local function _GetTalentInfo(character, tier, specNum)
+	local talentID = _GetTalentSelection(character, tier, specNum)
+	if talentID then
+		local _, class = DataStore:GetCharacterClass(character.key)
+	    	     class = classIDs[class]
+		return GetTalentInfo(talentID, true, nil, nil, class)
+	end
+end
+
+-- == Glyphs API ==========================================
+local sortTable = {}
+local function GetGlyphAtIndex(glyphs, index)
+	wipe(sortTable)
+	for glyphID, glyphData in pairs(glyphs) do
+		table.insert(sortTable, glyphData)
+	end
+	table.sort(sortTable)
+
+	local _, _, glyphID = strsplit('|', sortTable[index])
+	return tonumber(glyphID or '')
+end
+local function GetGlyphIndex(glyphs, searchGlyphID)
+	wipe(sortTable)
+	for glyphID, glyphData in pairs(glyphs) do
+		table.insert(sortTable, glyphData)
+	end
+	table.sort(sortTable)
+
+	print('search', searchGlyphID, type(searchGlyphID))
+	for index, glyphData in ipairs(sortTable) do
+		local _, _, glyphID = strsplit('|', sortTable[index])
+
+		print('compare to', glyphData)
+		if tonumber(glyphID or '') == searchGlyphID then
+			return index
+		end
+	end
+end
+
+local function _GetGlyphLink(glyphID, glyphName)
+	glyphName = glyphName or glyphNameByID[glyphID]
+	if glyphName then
+		return format("|cff66bbff|Hglyph:%s|h[%s]|h|r", glyphID, glyphName)
+	end
+end
+
+local function _GetNumGlyphs(character)
+	local _, class = DataStore:GetCharacterClass(character.key)
+	local glyphs = addon.db.global.Glyphs[class]
+
+	local count = 0
+	for _ in pairs(glyphs) do
+		count = count + 1
+	end
+	return count
+end
+
+-- arguments: <glyph: itemID | glyphID | glyphName>, returns: isKnown, isCorrectClass
+local function _IsGlyphKnown(character, glyph)
+	local _, class = DataStore:GetCharacterClass(character.key)
+	local glyphs = addon.db.global.Glyphs[class]
+
+	local canLearn = false
+	if type(glyph) == 'number' and glyphs[glyph] then
+		-- this is a glyphID
+		canLearn = true
+	elseif type(glyph) == 'number' then
+		-- this is an itemID
+		glyph = GetItemInfo(glyph)
+	end
+
+	if type(glyph) == 'string' then
+		-- convert itemName to glyphID
+		for glyphID, glyphData in pairs(glyphs) do
+			if glyphNameByID[glyphID] == glyph then
+				canLearn = true
+				glyph = glyphID
 				break
 			end
 		end
 	end
-	return class
+
+	local isKnown = character.knownGlyphs[glyph]
+	return isKnown, canLearn
 end
 
--- ** Mixins **
+local function _GetGlyphInfo(character, index)
+	local _, class = DataStore:GetCharacterClass(character.key)
+	local glyphs = addon.db.global.Glyphs[class]
+
+	local glyphID    = GetGlyphAtIndex(glyphs, index)
+	local glyphData  = addon.db.global.Glyphs[class][glyphID]
+	if not glyphData then return end
+
+	local _, glyphType, _, icon, specNames = strsplit('|', glyphData)
+	local glyphName = glyphNameByID[glyphID]
+	local link = _GetGlyphLink(glyphID, glyphName)
+	local isKnown = DataStore:IsGlyphKnown(character.key, glyphID)
+
+	return glyphName, tonumber(glyphType), isKnown, 'Interface\\Icons\\'..icon, glyphID, link, specNames
+end
+
+local function _GetGlyphInfoByID(glyphID)
+	local glyphName = glyphNameByID[glyphID]
+	local link = _GetGlyphLink(glyphID, glyphName)
+
+	for class, glyphs in pairs(addon.db.global.Glyphs) do
+		if glyphs[glyphID] then
+			local _, glyphType, _, icon, specNames = strsplit('|', glyphs[glyphID])
+			return glyphName, tonumber(glyphType), false, 'Interface\\Icons\\'..icon, glyphID, link, specNames
+		end
+	end
+end
+
+-- == LEGACY FUNCTIONS ====================================
+local talentsPerTier = _G.NUM_TALENT_COLUMNS
+local function _GetTalentRank(character, index, specNum, compatibilityMode)
+	local tree
+	if compatibilityMode then
+		tree, index = index, compatibilityMode
+	end
+
+	specNum = specNum or character.active
+	local tier = math.ceil(index / talentsPerTier)
+	return _GetTalentSelection(character, tier, specNum) == index and 1 or 0
+end
+
+-- these are no longer really necessary but in here for compatibility purposes
+-- DEPRECATED: use GetTalentLink(talentIndex, true, classIndex) instead
+local function _GetTalentLink(index, class, compatibilityMode)
+	if compatibilityMode then
+		-- this code is old and talent links only reference the current character's talents
+		local id, name = index, compatibilityMode
+		return format("|cff4e96f7|Htalent:%s|h[%s]|h|r", id, name)
+	else
+		class = classIDs[class]
+		return GetTalentLink(index, true, class)
+	end
+end
 local function _GetClassTrees(class)
-	local class = GetClassIDFromName(class)
+	local class = classIDs[class]
 	if type(class) == "number" then
 		local specID = 1
 		return function()
@@ -114,142 +336,39 @@ local function _GetClassTrees(class)
 		end
 	end
 end
-
 local function _GetTreeInfo(class, tree)
-	if type(tree) == "number" then
-		local class = GetClassIDFromName(class)
-		if type(class) == "number" then
-			local _, _, _, icon, background = GetSpecializationInfoForClassID(class, tree)
-			return icon, background
-		end
+	if type(tree) ~= "number" then return end
+	local class = classIDs[class]
+	if type(class) == "number" then
+		local _, _, _, icon, background = GetSpecializationInfoForClassID(class, tree)
+		return icon, background
 	end
 end
-
 local function _GetTreeNameByID(class, id)
-	local class = GetClassIDFromName(class)
+	local class = classIDs[class]
 	if type(class) == "number" then
 		local _, name = GetSpecializationInfoForClassID(class, id)
 		return name
 	end
 end
 
--- TODO: no longer required, use GetTalentLink(talentIndex, true, classIndex) instead
-local function _GetTalentLink(index, class, compatibilityMode)
-	if compatibilityMode then
-		-- this code is old and talent links only reference the current character's talents
-		local id, name = index, compatibilityMode
-		return format("|cff4e96f7|Htalent:%s|h[%s]|h|r", id, name)
-	else
-		class = GetClassIDFromName(class)
-		return GetTalentLink(index, true, class)
-	end
-end
-
-local function _GetTalentInfo(class, index)
-	local class = GetClassIDFromName(class)
-	if type(class) == "number" then
-		local name, texture, tier, column = GetTalentInfo(index, true, nil, nil, class)
-
-		-- local link = GetTalentLink(index, true, nil, nil, class)
-		-- local spellID = tonumber(link:match("talent:(%d+)"))
-
-		return --[[spellID,--]] name, texture, tier, column, 1
-	end
-end
-
-local function _GetTalentRank(character, index, specNum, compatibilityMode)
-	local tree
-	if compatibilityMode then
-		tree, index = index, compatibilityMode
-	end
-
-	local tier = math.floor((index-1) / talentsPerTier) -- this is actually tier-1
-	local attrib = character["Talents"..(specNum or character.ActiveTalents)]
-		  attrib = RightShift(attrib, 3*tier+1) -- ignore isAvailable bit
-	local selectedTalent = bAnd(attrib, 3)
-
-	return selectedTalent == index - (tier*talentsPerTier) and 1 or 0
-end
-
-local function _GetSpecialization(character, specNum)
-	specNum = specNum or character.ActiveTalents
-	local specialization = strsplit("|", character["Spec"..specNum] or "")
-	return tonumber(specialization or 0)
-end
-
-local function _GetNumUnspentTalents(character, specNum)
-	specNum = specNum or character.ActiveTalents
-	local _, unspent = strsplit("|", character["Spec"..specNum] or "")
-	return tonumber(unspent or 0)
-end
-
-local function _GetGlyphLink(glyphID)
-	local glyphName = glyphNameByID[glyphID]
-	local link, icon -- Blizzard doesn't expose glyph icons :(
-	if glyphName then
-		return format("|cff66bbff|Hglyph:%s|h[%s]|h|r", glyphID, glyphName)
-	end
-end
-
-local function _GetGlyphInfoByID(glyphID)
-	local glyphName = glyphNameByID[glyphID]
-	local link, icon -- Blizzard doesn't expose glyph icons :(
-	if glyphName then
-		link = format("|cff66bbff|Hglyph:%s|h[%s]|h|r", glyphID, glyphName)
-	end
-
-	return glyphName, icon or "", link
-end
-
---[[
-local glyphID = addon.ItemIDToGlyphID[itemID]
-if not glyphID then return end
-
-local id
-for index, glyph in ipairs(character.GlyphList) do
-	id = RightShift(glyph, 4)
-
-	if id == glyphID then
-		local isKnown = bAnd(RightShift(glyph, 3), 1)
-		return (isKnown == 1) and true or nil, true
-	end
-end
---]]
-
--- FIXME: this requires DataStore_Talents
--- <glyph: itemID | glyphName>
-local function _IsGlyphKnown(character, glyph)
-	-- returns: isKnown, isKnown or canLearn
-	if type(glyph) == "number" then
-		local glyphID = DataStore_Talents.ItemIDToGlyphID[glyph]
-		if not glyphID then return end
-		glyph = glyphNameByID[glyphID]
-	end
-
-	local characterTalents = DataStore_Talents.Characters[ character.key ]
-	for _, glyphInfo in ipairs(characterTalents.GlyphList) do
-		local glyphID = RightShift(glyphInfo, 4)
-		if glyphNameByID[glyphID] == glyph then
-			local isKnown = bAnd(RightShift(glyphInfo, 3), 1)
-			return (isKnown == 1) and true or nil, true
-		end
-	end
-end
-
--- *** Register with DataStore ***
+-- == Setup ===============================================
 local PublicMethods = {
-	GetClassTrees = _GetClassTrees,
-	GetTreeInfo = _GetTreeInfo,
-	GetTreeNameByID = _GetTreeNameByID,
-	GetTalentLink = _GetTalentLink,
-	GetTalentInfo = _GetTalentInfo,
-	GetTalentRank = _GetTalentRank,
-	GetSpecialization = _GetSpecialization,
+	GetClassTrees        = _GetClassTrees,
+	GetTreeInfo          = _GetTreeInfo,
+	GetTreeNameByID      = _GetTreeNameByID,
+	GetTalentRank        = _GetTalentRank,
+
+	GetSpecialization    = _GetSpecialization,
+	GetSpecializationID  = _GetSpecializationID,
 	GetNumUnspentTalents = _GetNumUnspentTalents,
-	GetGlyphLink = _GetGlyphLink,
-	-- GetGlyphInfo = _GetGlyphInfo,
+	GetTalentSelection   = _GetTalentSelection,
+	GetTalentInfo        = _GetTalentInfo,
+
+	GetGlyphLink     = _GetGlyphLink,
+	GetGlyphInfo     = _GetGlyphInfo,
 	GetGlyphInfoByID = _GetGlyphInfoByID,
-	IsGlyphKnown = _IsGlyphKnown,
+	IsGlyphKnown     = _IsGlyphKnown,
 }
 
 function addon:OnInitialize()
@@ -259,22 +378,44 @@ function addon:OnInitialize()
 	for methodName, method in pairs(PublicMethods) do
 		ns.RegisterOverride(addon, methodName, method)
 	end
-	ns.SetOverrideType("GetTalentRank", 'character')
-	ns.SetOverrideType("GetSpecialization", 'character')
-	ns.SetOverrideType("GetNumUnspentTalents", 'character')
-	-- ns.SetOverrideType("GetGlyphInfo", 'character')
-	ns.SetOverrideType("IsGlyphKnown", 'character')
+	ns.SetOverrideType('GetTalentRank', 'character')
 
-	ScanTalents()
+	ns.SetOverrideType('GetSpecialization', 'character')
+	ns.SetOverrideType('GetSpecializationID', 'character')
+	ns.SetOverrideType('GetNumUnspentTalents', 'character')
+	ns.SetOverrideType('GetTalentSelection', 'character')
+	ns.SetOverrideType('GetTalentInfo', 'character')
+
+	ns.SetOverrideType('GetGlyphInfo', 'character')
+	ns.SetOverrideType('GetGlyphInfoByID', 'character')
+	ns.SetOverrideType('IsGlyphKnown', 'character')
 end
 
 -- *** Event Handlers ***
 function addon:OnEnable()
-	addon:RegisterEvent("PLAYER_ALIVE", ScanTalents)
-	addon:RegisterEvent("PLAYER_TALENT_UPDATE", ScanTalents)
+	local initialized
+	addon:RegisterEvent('PLAYER_LOGIN', function(...)
+		ScanTalents()
+		if not initialized then
+			ScanGlyphs()
+			ScanGlyphList()
+			initialized = true
+		end
+	end)
+	addon:RegisterEvent('PLAYER_TALENT_UPDATE', ScanTalents)
+
+	addon:RegisterEvent('GLYPH_ADDED', ScanGlyphs)
+	addon:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
+	addon:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
+	addon:RegisterEvent('USE_GLYPH', ScanGlyphList)
 end
 
 function addon:OnDisable()
-	addon:UnregisterEvent("PLAYER_ALIVE")
-	addon:UnregisterEvent("PLAYER_TALENT_UPDATE")
+	addon:UnregisterEvent('PLAYER_LOGIN')
+	addon:UnregisterEvent('PLAYER_TALENT_UPDATE')
+
+	addon:UnregisterEvent('GLYPH_ADDED')
+	addon:UnregisterEvent('GLYPH_REMOVED')
+	addon:UnregisterEvent('GLYPH_UPDATED')
+	addon:UnregisterEvent('USE_GLYPH')
 end
