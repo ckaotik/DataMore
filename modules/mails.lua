@@ -4,12 +4,14 @@ local addonName, addon, _ = ...
 local mails = addon:NewModule('Mails', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore
--- GLOBALS: GetInboxHeaderInfo, GetItemInfo, GetSendMailItem, GetSendMailItemLink, UnitFullName, GetRealmName, GetSendMailMoney, GetSendMailCOD, GetInboxItem, GetInboxItemLink, GetInboxNumItems
--- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, table
+-- GLOBALS: GetInboxHeaderInfo, GetItemInfo, GetSendMailItem, GetSendMailItemLink, UnitFullName, GetRealmName, GetSendMailMoney, GetSendMailCOD, GetInboxText, GetInboxItem, GetInboxItemLink, GetInboxNumItems
+-- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, table, type
 
 local thisCharacter = DataStore:GetCharacter()
+local _, playerRealm = UnitFullName('player')
 
 local DEFAULT_STATIONERY = 'Interface\\Icons\\INV_Misc_Note_01'
+local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED = 0, 1, 2
 
 -- these subtables need unique identifier
 local AddonDB_Defaults = {
@@ -25,7 +27,8 @@ local AddonDB_Defaults = {
 						subject = nil,
 						message = nil,
 						stationery = nil,
-						expires = 0, -- x < 0: deleted in x, x > 0: returned in x
+						expires = 0,
+						status = STATUS_UNREAD,
 						lastUpdate = nil,
 
 						money = 0, -- x < 0: COD, x > 0: earned
@@ -44,28 +47,54 @@ local AddonDB_Defaults = {
 	}
 }
 
-local function ScanMail(index)
-	local mail = {}
+local function ScanMail(index, ...)
+	if not index then return end
 
-	local icon, stationery, sender, subject, money, CODAmount, daysLeft, numAttachments, wasRead, wasReturned, textCreated, canReply = GetInboxHeaderInfo(index)
+	local character, isInbox
+	local sender, subject, message, money, CODAmount, daysLeft, status, stationery
+	if type(index) == 'number' then
+		-- inbox
+		character = mails.ThisCharacter
+		isInbox = true
 
-	-- local senderName, senderRealm = strsplit('-', sender)
-	mail.sender = sender
-	mail.subject = subject
-	mail.stationery = stationery ~= DEFAULT_STATIONERY and stationery or nil
-	mail.money = ((money and money > 0) and money) or ((CODAmount and CODAmount > 0) and -1*CODAmount) or 0
-	mail.expires = time() + daysLeft*24*60*60
-	mail.lastUpdate = time()
+		-- marks mail as read
+		message = mails.db.global.Settings['ReadMails'] and GetInboxText(index) or nil
+		local wasRead, wasReturned
+		_, stationery, sender, subject, money, CODAmount, daysLeft, _, wasRead, wasReturned = GetInboxHeaderInfo(index)
+		status = (wasReturned and STATUS_RETURNED) or (wasRead and STATUS_READ) or STATUS_UNREAD
+	else
+		-- outbox
+		character = mails.db.global.Characters[index]
 
-	if mails.db.global.Settings['ReadMails'] then
-		-- this marks mail as read
-		mail.message = GetInboxText(index)
+		_, subject, message = ...
+		daysLeft, status, stationery = 30, STATUS_UNREAD, DEFAULT_STATIONERY
+		money, CODAmount = GetSendMailMoney(), GetSendMailCOD()
+		sender  = strjoin('-', UnitFullName('player'))
 	end
 
+	table.insert(character.Mails, {})
+	local mail = character.Mails[ #character.Mails ]
+
+	mail.sender = sender:find('-') and sender or strjoin('-', sender, playerRealm)
+	mail.subject = subject
+	mail.message = message
+	mail.stationery = stationery ~= DEFAULT_STATIONERY and stationery or nil
+	mail.money = ((money and money > 0) and money) or ((CODAmount and CODAmount > 0) and -1*CODAmount)
+	mail.expires = time() + daysLeft*24*60*60
+	mail.status = status
+	mail.lastUpdate = time()
+
 	mail.attachments = {}
-	for attachmentIndex = 1, _G.ATTACHMENTS_MAX_RECEIVE do
-		local itemLink = GetInboxItemLink(index, attachmentIndex)
-		local _, _, count = GetInboxItem(index, attachmentIndex)
+	for attachmentIndex = 1, isInbox and _G.ATTACHMENTS_MAX_RECEIVE or _G.ATTACHMENTS_MAX_SEND do
+		local itemLink, count
+		if isInbox then
+			itemLink    = GetInboxItemLink(index, attachmentIndex)
+			_, _, count = GetInboxItem(index, attachmentIndex)
+		else
+			itemLink    = GetSendMailItemLink(attachmentIndex)
+			_, _, count = GetSendMailItem(attachmentIndex)
+		end
+
 		if itemLink then
 			table.insert(mail.attachments, {
 				itemID = addon.GetLinkID(itemLink),
@@ -75,12 +104,22 @@ local function ScanMail(index)
 		end
 	end
 
-	table.insert(mails.ThisCharacter.Mails, mail)
+	if not isInbox then
+		table.sort(character.Mails, function(a, b)
+			return a.expires < b.expires
+		end)
+		if not character.lastUpdate then
+			-- apply lastUpdate so data is considered valid
+			character.lastUpdate = time()
+		end
+	end
 end
 
 local function ScanInbox()
 	local character = mails.ThisCharacter
 	wipe(character.Mails)
+
+	print('Scan Inbox')
 
 	for index = 1, GetInboxNumItems() do
 		ScanMail(index)
@@ -115,38 +154,8 @@ local function OnSendMail(recipient, subject, body)
 	-- TODO: check guildies (@see DataStore_Mails:SendGuildMail())
 	if not recipientKey or recipientKey == thisCharacter then return end
 
-	local character = mails.db.global.Characters[recipientKey]
-	local mail = {}
-
-	local money     = GetSendMailMoney()
-	local CODAmount = GetSendMailCOD()
-
-	mail.sender  = strjoin('-', UnitFullName('player'))
-	mail.subject = subject
-	mail.message = body
-	mail.money = ((money and money > 0) and money) or ((CODAmount and CODAmount > 0) and -1*CODAmount) or 0
-	mail.expires = time() + 30*24*60*60
-	mail.lastUpdate = time()
-
-	for index = 1, _G.ATTACHMENTS_MAX_SEND do
-		local _, _, count = GetSendMailItem(index)
-		local itemLink = GetSendMailItemLink(index)
-		if itemLink then
-			table.insert(mail.attachments, {
-				itemID = addon.GetLinkID(itemLink),
-				itemLink = not addon.IsBaseLink(itemLink) and itemLink or nil,
-				count = count,
-			})
-		end
-	end
-
-	table.insert(character.Mails, mail)
-	table.sort(character.Mails, function(a, b)
-		return a.expires < b.expires
-	end)
-	if not character.lastUpdate then
-		character.lastUpdate = time()
-	end
+	print('Sent mail to', recipientKey)
+	ScanMail(recipientKey, recipient, subject, body)
 end
 
 -- --------------------------------------------------------
