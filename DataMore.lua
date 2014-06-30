@@ -1,5 +1,6 @@
 local addonName, addon = ...
 LibStub('AceAddon-3.0'):NewAddon(addon, addonName)
+_G[addonName] = addon -- expose us
 
 -- GLOBALS: GetCVar, GetQuestResetTime
 -- GLOBALS: assert ,format, pairs, string, time, date, tonumber, type

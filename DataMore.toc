@@ -24,7 +24,7 @@ DataMore.lua
 modules\equipment.lua
 modules\inventory.lua
 modules\lockouts.lua
-#modules\mails.lua
+modules\mails.lua
 modules\quests.lua
 modules\talents.lua
 modules\weeklies.lua
