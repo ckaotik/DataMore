@@ -1,6 +1,5 @@
 local addonName, addon = ...
-local moduleName = 'DataMore_Weeklies'
-local weeklies   = addon:NewModule('weeklies', 'AceEvent-3.0') -- 'AceConsole-3.0'
+local weeklies   = addon:NewModule('Weeklies', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 -- GLOBALS: LibStub, DataStore
 -- GLOBALS: IsAddOnLoaded, GetCurrencyListSize, GetCurrencyListLink, GetCurrencyInfo
@@ -130,9 +129,9 @@ local PublicMethods = {
 }
 
 function weeklies:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(moduleName, self, PublicMethods)
+	DataStore:RegisterModule(self.name, self, PublicMethods)
 	for funcName, funcImpl in pairs(PublicMethods) do
 		DataStore:SetCharacterBasedMethod(funcName)
 	end

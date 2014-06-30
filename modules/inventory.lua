@@ -1,5 +1,5 @@
 local addonName, addon, _ = ...
-local inventory = addon:NewModule('inventory', 'AceEvent-3.0')
+local inventory = addon:NewModule('Inventory', 'AceEvent-3.0')
 
 -- GLOBALS: _G
 -- GLOBALS: GetInventoryItemLink

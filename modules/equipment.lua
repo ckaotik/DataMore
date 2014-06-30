@@ -1,6 +1,5 @@
 local addonName, addon, _ = ...
-local moduleName = 'DataMore_Equipment'
-local equipment  = addon:NewModule('equipment', 'AceEvent-3.0')
+local equipment = addon:NewModule('Equipment', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore
 -- GLOBALS: GetNumEquipmentSets, GetEquipmentSetInfo, GetEquipmentSetInfoByName, GetEquipmentSetLocations, EquipmentManager_UnpackLocation, EquipmentManager_GetItemInfoByLocation, GetItemInfo, GetVoidItemInfo, GetContainerItemLink, GetInventoryItemLink
@@ -100,7 +99,7 @@ local function _GetEquipmentSetItems(character, setName)
 end
 
 function equipment:OnInitialize()
-	equipment.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', {
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
 		global = {
 			Characters = {
 				['*'] = {
@@ -111,7 +110,7 @@ function equipment:OnInitialize()
 		}
 	})
 
-	DataStore:RegisterModule(moduleName, equipment, {
+	DataStore:RegisterModule(self.name, self, {
 		GetNumEquipmentSets = _GetNumEquipmentSets,
 		GetEquipmentSetNames = _GetEquipmentSetNames,
 		GetEquipmentSet = _GetEquipmentSet,

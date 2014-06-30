@@ -1,6 +1,5 @@
 local addonName, addon = ...
-local moduleName = 'DataMore_Lockouts'
-local lockouts   = addon:NewModule('lockouts', 'AceEvent-3.0')
+local lockouts = addon:NewModule('Lockouts', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore, EXPANSION_LEVEL
 -- GLOBALS: IsAddOnLoaded, UnitLevel, GetQuestResetTime, GetRFDungeonInfo, GetNumRFDungeons, GetLFGDungeonRewardCapInfo, GetLFGDungeonNumEncounters, GetLFGDungeonRewards, GetLFDLockInfo, LFG_INSTANCE_INVALID_CODES
@@ -110,9 +109,9 @@ local PublicMethods = {
 }
 
 function addon:OnInitialize()
-	lockouts.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(moduleName, lockouts, PublicMethods)
+	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetCurrencyCaps')
 	DataStore:SetCharacterBasedMethod('GetCurrencyCapInfo')
 	DataStore:SetCharacterBasedMethod('GetLFGs')
@@ -126,7 +125,7 @@ function lockouts:OnEnable()
 
 	-- clear expired
 	local now = time()
-	for characterKey, character in pairs(lockouts.Characters) do
+	for characterKey, character in pairs(self.Characters) do
 		for dungeonID, data in pairs(character.LFGs) do
 			local status, reset, numDefeated = strsplit('|', data)
 			reset = tonumber(reset)

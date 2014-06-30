@@ -1,6 +1,5 @@
 local addonName, addon, _ = ...
-local moduleName = 'DataMore_Quests'
-local quests     = addon:NewModule('quests', 'AceEvent-3.0') -- 'AceConsole-3.0'
+local quests = addon:NewModule('Quests', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 local characters    = DataStore:GetCharacters()
 local thisCharacter = DataStore:GetCharacter()
@@ -157,9 +156,9 @@ local PublicMethods = {
 }
 
 function quests:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(moduleName, self, PublicMethods)
+	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetQuestProgress')
 	DataStore:SetCharacterBasedMethod('GetQuestProgressPercentage')
 	DataStore:SetCharacterBasedMethod('GetAchievementProgress')

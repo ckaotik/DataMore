@@ -1,6 +1,5 @@
 local addonName, addon, _ = ...
-local moduleName = 'DataMore_Talents'
-local talents    = addon:NewModule('talents', 'AceEvent-3.0') -- 'AceConsole-3.0'
+local talents = addon:NewModule('Talents', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 -- TODO: Check glyph scan events
 -- TODO: split into talents + glyphs
@@ -370,9 +369,9 @@ local PublicMethods = {
 }
 
 function talents:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(moduleName, self, {})
+	DataStore:RegisterModule(self.name, self, {})
 	for methodName, method in pairs(PublicMethods) do
 		addon.RegisterOverride(self, methodName, method)
 	end
