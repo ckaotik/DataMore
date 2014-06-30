@@ -1,49 +1,8 @@
 local addonName, addon = ...
-
--- GLOBALS: GetCVar, GetQuestResetTime
--- GLOBALS: assert ,format, pairs, string, time, date, tonumber
 LibStub('AceAddon-3.0'):NewAddon(addon, addonName)
 
-local initialize = function()
-	-- expose this addon
-	-- _G[addonName] = addon
-end
-
-local frame, eventHooks = CreateFrame("Frame"), {}
-local function eventHandler(frame, event, arg1, ...)
-	if event == 'ADDON_LOADED' and arg1 == addonName then
-		-- make sure core initializes before anyone else
-		initialize()
-	end
-
-	if eventHooks[event] then
-		for id, listener in pairs(eventHooks[event]) do
-			listener(frame, event, arg1, ...)
-		end
-	end
-end
-frame:SetScript("OnEvent", eventHandler)
-addon.events = frame
-
--- TODO: replace with AceEvent
-function addon.RegisterEvent(event, callback, id, silentFail)
-	assert(callback and event and id, format("Usage: RegisterEvent(event, callback, id[, silentFail])"))
-	if not eventHooks[event] then
-		eventHooks[event] = {}
-		frame:RegisterEvent(event)
-	end
-	assert(silentFail or not eventHooks[event][id], format("Event %s already registered by id %s.", event, id))
-
-	eventHooks[event][id] = callback
-end
-function addon.UnregisterEvent(event, id)
-	if not eventHooks[event] or not eventHooks[event][id] then return end
-	eventHooks[event][id] = nil
-	if addon.Count(eventHooks[event]) < 1 then
-		eventHooks[event] = nil
-		frame:UnregisterEvent(event)
-	end
-end
+-- GLOBALS: GetCVar, GetQuestResetTime
+-- GLOBALS: assert ,format, pairs, string, time, date, tonumber, type
 
 -- ========================================================
 --  Overriding some existing modules
@@ -61,7 +20,7 @@ end
 function addon.SetOverrideType(methodName, methodType)
 	local override = RegisteredOverrides[methodName]
 	assert(override, 'No method registered to name "'..methodName..'"')
-	override.isCharBased = methodType == 'character'
+	override.isCharBased  = methodType == 'character'
 	override.isGuildBased = methodType == 'guild'
 end
 -- returns (by reference!) method and module of override, nil if no such override exists
