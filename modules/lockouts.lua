@@ -1,13 +1,11 @@
-local addonName, ns = ...
+local addonName, addon = ...
+local moduleName = 'DataMore_Lockouts'
+local lockouts   = addon:NewModule('lockouts', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore, EXPANSION_LEVEL
 -- GLOBALS: IsAddOnLoaded, UnitLevel, GetQuestResetTime, GetRFDungeonInfo, GetNumRFDungeons, GetLFGDungeonRewardCapInfo, GetLFGDungeonNumEncounters, GetLFGDungeonRewards, GetLFDLockInfo, LFG_INSTANCE_INVALID_CODES
 -- GLOBALS: type, next, wipe, pairs, time, date, string, tonumber, math, strsplit
 
-local addonName  = "DataMore_Lockouts"
-   _G[addonName] = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
-
-local addon = _G[addonName]
 local thisCharacter = DataStore:GetCharacter()
 
 -- these subtables need unique identifier
@@ -35,9 +33,9 @@ local LFGInfos = {
 
 local function UpdateLFGStatus()
 	-- TODO: group data by dungeon?
-	local playerLevel = UnitLevel("player")
+	local playerLevel = UnitLevel('player')
 
-	local lfgs = addon.ThisCharacter.LFGs
+	local lfgs = lockouts.ThisCharacter.LFGs
 	wipe(lfgs)
 	for i = 1, #LFGInfos, 2 do
 		local getNum, getInfo = LFGInfos[i], LFGInfos[i+1]
@@ -51,22 +49,22 @@ local function UpdateLFGStatus()
 			if available ~= 1 or EXPANSION_LEVEL < expansionLevel or playerLevel < minLevel or playerLevel > maxLevel then
 				-- not available
 				local _, reason, info1, info2 = GetLFDLockInfo(dungeonID, 1)
-				status = string.format("%s:%s:%s", reason or '', info1 or '', info2 or '')
+				status = string.format('%s:%s:%s', reason or '', info1 or '', info2 or '')
 			end
 
 			local dungeonReset = 0
 			if numDefeated > 0 or doneToday then
-				dungeonReset = isWeekly and ns.GetNextMaintenance() or (time() + GetQuestResetTime())
+				dungeonReset = isWeekly and addon.GetNextMaintenance() or (time() + GetQuestResetTime())
 			end
 
 			if status == 0 and dungeonReset == 0 and numDefeated == 0 then
 				lfgs[dungeonID] = 0
 			else
-				lfgs[dungeonID] = string.format("%s|%d|%d", status, dungeonReset, numDefeated)
+				lfgs[dungeonID] = string.format('%s|%d|%d', status, dungeonReset, numDefeated)
 			end
 		end
 	end
-	addon.ThisCharacter.lastUpdate = time()
+	lockouts.ThisCharacter.lastUpdate = time()
 end
 
 -- Mixins
@@ -74,14 +72,14 @@ local function _GetLFGInfo(character, dungeonID)
 	local instanceInfo = character.LFGs[dungeonID]
 	if not instanceInfo then return end
 
-	local status, reset, numDefeated = string.split("|", instanceInfo)
+	local status, reset, numDefeated = string.split('|', instanceInfo)
 	status = tonumber(status) or status
-	if type(status) == "string" then
+	if type(status) == 'string' then
 		local playerName, lockedReason, subReason1, subReason2 = strsplit(":", status)
 		if lockedReason == 1029 or lockedReason == 1030 or lockedReason == 1031 then
-			status = _G["INSTANCE_UNAVAILABLE_OTHER_TOO_SOON"]
+			status = _G['INSTANCE_UNAVAILABLE_OTHER_TOO_SOON']
 		else
-			status = string.format(_G["INSTANCE_UNAVAILABLE_SELF_"..(LFG_INSTANCE_INVALID_CODES[lockedReason] or "OTHER")],
+			status = string.format(_G['INSTANCE_UNAVAILABLE_SELF_'..(LFG_INSTANCE_INVALID_CODES[lockedReason] or 'OTHER')],
 				playerName, subReason1, subReason2)
 		end
 	else
@@ -112,25 +110,25 @@ local PublicMethods = {
 }
 
 function addon:OnInitialize()
-	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
+	lockouts.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(addonName, addon, PublicMethods)
-	DataStore:SetCharacterBasedMethod("GetCurrencyCaps")
-	DataStore:SetCharacterBasedMethod("GetCurrencyCapInfo")
-	DataStore:SetCharacterBasedMethod("GetLFGs")
-	DataStore:SetCharacterBasedMethod("GetLFGInfo")
-	DataStore:SetCharacterBasedMethod("GetCurrencyWeeklyAmount")
-	DataStore:SetCharacterBasedMethod("IsWeeklyQuestCompletedBy")
+	DataStore:RegisterModule(moduleName, lockouts, PublicMethods)
+	DataStore:SetCharacterBasedMethod('GetCurrencyCaps')
+	DataStore:SetCharacterBasedMethod('GetCurrencyCapInfo')
+	DataStore:SetCharacterBasedMethod('GetLFGs')
+	DataStore:SetCharacterBasedMethod('GetLFGInfo')
+	DataStore:SetCharacterBasedMethod('GetCurrencyWeeklyAmount')
+	DataStore:SetCharacterBasedMethod('IsWeeklyQuestCompletedBy')
 end
 
-function addon:OnEnable()
-	addon:RegisterEvent("LFG_LOCK_INFO_RECEIVED", UpdateLFGStatus)
+function lockouts:OnEnable()
+	self:RegisterEvent('LFG_LOCK_INFO_RECEIVED', UpdateLFGStatus)
 
 	-- clear expired
 	local now = time()
-	for characterKey, character in pairs(addon.Characters) do
+	for characterKey, character in pairs(lockouts.Characters) do
 		for dungeonID, data in pairs(character.LFGs) do
-			local status, reset, numDefeated = strsplit("|", data)
+			local status, reset, numDefeated = strsplit('|', data)
 			reset = tonumber(reset)
 			if reset and reset ~= 0 and reset < now and tonumber(status) then
 				-- had lockout, lockout expired, LFG is available
@@ -140,6 +138,6 @@ function addon:OnEnable()
 	end
 end
 
-function addon:OnDisable()
-	addon:UnregisterEvent("LFG_LOCK_INFO_RECEIVED")
+function lockouts:OnDisable()
+	self:UnregisterEvent('LFG_LOCK_INFO_RECEIVED')
 end

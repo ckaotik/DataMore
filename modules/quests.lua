@@ -1,11 +1,10 @@
-local addonName, ns, _ = ...
-
-local addonName  = "DataMore_Quests"
-local addon      = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
-   _G[addonName] = addon
+local addonName, addon, _ = ...
+local moduleName = 'DataMore_Quests'
+local quests     = addon:NewModule('quests', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 local characters    = DataStore:GetCharacters()
 local thisCharacter = DataStore:GetCharacter()
+local emptyTable = {}
 
 -- these subtables need unique identifier
 local AddonDB_Defaults = {
@@ -78,7 +77,7 @@ local progressHandler = {
 }
 
 local function _GetQuestProgress(character, questID)
-	return character.QuestProgress[questID]
+	return character.QuestProgress[questID] or emptyTable
 end
 
 local function _GetQuestProgressPercentage(character, questID)
@@ -110,7 +109,7 @@ local function _GetQuestProgressPercentage(character, questID)
 end
 
 local function UpdateQuestProgress()
-	local questProgress = addon.ThisCharacter.QuestProgress
+	local questProgress = quests.ThisCharacter.QuestProgress
 	wipe(questProgress)
 
 	for questIndex = 1, (GetNumQuestLogEntries()) do
@@ -147,7 +146,7 @@ local function UpdateQuestProgress()
 		end
 	end
 
-	addon.ThisCharacter.lastUpdate = time()
+	quests.ThisCharacter.lastUpdate = time()
 end
 
 -- setup
@@ -157,27 +156,27 @@ local PublicMethods = {
 	GetAchievementProgress = _GetAchievementProgress, -- TODO: FIXME: does not belong here
 }
 
-function addon:OnInitialize()
-	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
+function quests:OnInitialize()
+	self.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(addonName, addon, PublicMethods)
+	DataStore:RegisterModule(moduleName, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetQuestProgress')
 	DataStore:SetCharacterBasedMethod('GetQuestProgressPercentage')
 	DataStore:SetCharacterBasedMethod('GetAchievementProgress')
 
 	for methodName, method in pairs(PublicMethods) do
-		ns.RegisterOverride(addon, methodName, method, 'character')
+		addon.RegisterOverride(self, methodName, method, 'character')
 	end
 end
 
-function addon:OnEnable()
-	addon:RegisterEvent("PLAYER_ALIVE", UpdateQuestProgress)
-	addon:RegisterEvent("UNIT_QUEST_LOG_CHANGED", UpdateQuestProgress)
-	-- addon:RegisterEvent("QUEST_COMPLETE", UpdateQuestProgress)
+function quests:OnEnable()
+	self:RegisterEvent('PLAYER_ALIVE', UpdateQuestProgress)
+	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', UpdateQuestProgress)
+	-- self:RegisterEvent("QUEST_COMPLETE", UpdateQuestProgress)
 end
 
-function addon:OnDisable()
-	addon:UnregisterEvent("PLAYER_ALIVE")
-	addon:UnregisterEvent("UNIT_QUEST_LOG_CHANGED")
-	-- addon:UnregisterEvent("QUEST_COMPLETE")
+function quests:OnDisable()
+	self:UnregisterEvent('PLAYER_ALIVE')
+	self:UnregisterEvent('UNIT_QUEST_LOG_CHANGED')
+	-- self:UnregisterEvent("QUEST_COMPLETE")
 end

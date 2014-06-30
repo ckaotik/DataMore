@@ -1,6 +1,6 @@
 local addonName, addon, _ = ...
--- DataStore plugin that stores character's equipment sets
-local equipment = addon:NewModule('equipment', 'AceEvent-3.0')
+local moduleName = 'DataMore_Equipment'
+local equipment  = addon:NewModule('equipment', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore
 -- GLOBALS: GetNumEquipmentSets, GetEquipmentSetInfo, GetEquipmentSetInfoByName, GetEquipmentSetLocations, EquipmentManager_UnpackLocation, EquipmentManager_GetItemInfoByLocation, GetItemInfo, GetVoidItemInfo, GetContainerItemLink, GetInventoryItemLink
@@ -100,7 +100,7 @@ local function _GetEquipmentSetItems(character, setName)
 end
 
 function equipment:OnInitialize()
-	equipment.db = LibStub("AceDB-3.0"):New('DataMore_EquipmentDB', {
+	equipment.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', {
 		global = {
 			Characters = {
 				['*'] = {
@@ -111,7 +111,7 @@ function equipment:OnInitialize()
 		}
 	})
 
-	DataStore:RegisterModule('DataMore_Equipment', equipment, {
+	DataStore:RegisterModule(moduleName, equipment, {
 		GetNumEquipmentSets = _GetNumEquipmentSets,
 		GetEquipmentSetNames = _GetEquipmentSetNames,
 		GetEquipmentSet = _GetEquipmentSet,

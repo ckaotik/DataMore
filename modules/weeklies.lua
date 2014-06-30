@@ -1,13 +1,11 @@
-local addonName, ns = ...
+local addonName, addon = ...
+local moduleName = 'DataMore_Weeklies'
+local weeklies   = addon:NewModule('weeklies', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 -- GLOBALS: LibStub, DataStore
 -- GLOBALS: IsAddOnLoaded, GetCurrencyListSize, GetCurrencyListLink, GetCurrencyInfo
 -- GLOBALS: wipe, time, tonumber, string, math, pairs
 
-local addonName  = "DataMore_Weeklies"
-   _G[addonName] = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
-
-local addon = _G[addonName]
 local thisCharacter = DataStore:GetCharacter()
 
 -- these subtables need unique identifier
@@ -36,7 +34,7 @@ WORLD_BOSS_SHA_OF_ANGER = "Sha of Anger";
 --]]
 
 local function UpdateSavedBosses()
-	local bosses = addon.ThisCharacter.WorldBosses
+	local bosses = weeklies.ThisCharacter.WorldBosses
 	wipe(bosses)
 	for i = 1, GetNumSavedWorldBosses() do
 		local name, id, reset = GetSavedWorldBossInfo(i)
@@ -58,20 +56,20 @@ end
 
 local function UpdateWeeklyCap()
 	if GetCurrencyListSize() < 1 then return end
-	local currencies = addon.ThisCharacter.WeeklyCurrency
+	local currencies = weeklies.ThisCharacter.WeeklyCurrency
 	wipe(currencies)
 
 	for i = 1, GetCurrencyListSize() do
 		local currencyLink = GetCurrencyListLink(i)
 		if currencyLink then
-			local currencyID = tonumber(string.match(currencyLink, "currency:(%d+)"))
+			local currencyID = tonumber(string.match(currencyLink, 'currency:(%d+)'))
 			local _, currentAmount, _, weeklyAmount, weeklyMax, totalMax = GetCurrencyInfo(currencyID)
 			if weeklyMax and weeklyMax > 0 then
 				currencies[currencyID] = weeklyAmount
 			end
 		end
 	end
-	addon.ThisCharacter.lastUpdate = time()
+	weeklies.ThisCharacter.lastUpdate = time()
 end
 
 local function _GetCurrencyCaps(character)
@@ -79,7 +77,7 @@ local function _GetCurrencyCaps(character)
 end
 
 local function _GetCurrencyWeeklyAmount(character, currencyID)
-	local lastMaintenance = ns.GetLastMaintenance()
+	local lastMaintenance = addon.GetLastMaintenance()
 	if character == thisCharacter then
 		-- always hand out live data as we might react to CURRENCY_DISPLAY_UPDATE later than our requestee
 		UpdateWeeklyCap()
@@ -112,7 +110,7 @@ end
 local function _IsWeeklyQuestCompletedBy(character, questID)
 	local characterKey = type(character) == 'string' and character or character.key
 	local _, lastUpdate = DataStore:GetQuestHistoryInfo(characterKey)
-	local lastMaintenance = ns.GetLastMaintenance()
+	local lastMaintenance = addon.GetLastMaintenance()
 	if not (lastUpdate and lastMaintenance) or lastUpdate < lastMaintenance then
 		return false
 	else
@@ -131,29 +129,29 @@ local PublicMethods = {
 	IsWeeklyQuestCompletedBy = _IsWeeklyQuestCompletedBy,
 }
 
-function addon:OnInitialize()
-	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
+function weeklies:OnInitialize()
+	self.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(addonName, addon, PublicMethods)
+	DataStore:RegisterModule(moduleName, self, PublicMethods)
 	for funcName, funcImpl in pairs(PublicMethods) do
 		DataStore:SetCharacterBasedMethod(funcName)
 	end
 
 	-- we need this as an override, since we need access to the characterKey
-	ns.RegisterOverride(addon, 'IsWeeklyQuestCompletedBy', _IsWeeklyQuestCompletedBy, 'character')
+	addon.RegisterOverride(self, 'IsWeeklyQuestCompletedBy', _IsWeeklyQuestCompletedBy, 'character')
 end
 
-function addon:OnEnable()
-	addon:RegisterEvent("CURRENCY_DISPLAY_UPDATE", UpdateWeeklyCap)
+function weeklies:OnEnable()
+	self:RegisterEvent('CURRENCY_DISPLAY_UPDATE', UpdateWeeklyCap)
 	-- TODO: track world boss kills
-	--[[ addon:RegisterEvent("QUEST_LOG_UPDATE", function()
+	--[[self:RegisterEvent('QUEST_LOG_UPDATE', function()
 		if GetNextMaintenance() then
 			UpdateWeeklyCap()
-			addon:UnregisterEvent("QUEST_LOG_UPDATE")
+			self:UnregisterEvent('QUEST_LOG_UPDATE')
 		end
 	end) --]]
 end
-function addon:OnDisable()
-	addon:UnregisterEvent("CURRENCY_DISPLAY_UPDATE")
-	-- addon:UnregisterEvent("QUEST_LOG_UPDATE")
+function weeklies:OnDisable()
+	self:UnregisterEvent('CURRENCY_DISPLAY_UPDATE')
+	-- self:UnregisterEvent('QUEST_LOG_UPDATE')
 end

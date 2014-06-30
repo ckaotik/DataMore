@@ -1,4 +1,6 @@
-local addonName, ns, _ = ...
+local addonName, addon, _ = ...
+local moduleName = 'DataMore_Talents'
+local talents    = addon:NewModule('talents', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 -- TODO: Check glyph scan events
 -- TODO: split into talents + glyphs
@@ -7,10 +9,6 @@ local addonName, ns, _ = ...
 -- GLOBALS: GetTalentInfo, GetTalentLink, GetNumClasses, GetClassInfo, GetSpecializationInfoForClassID, UnitLevel, UnitClass, GetActiveSpecGroup, GetMaxTalentTier, GetSpecialization, GetItemInfo, GetNumSpecGroups, GetNumGlyphSockets, GetSpecializationInfo, GetTalentRowSelectionInfo
 -- GLOBALS: type, math, strsplit, tonumber, format, time, wipe, rawget, rawset, select, ipairs, pairs, table, strjoin, unpack
 local rshift, band = bit.rshift, bit.band
-
-local addonName  = "DataMore_Talents"
-local addon = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
-_G[addonName] = addon
 
 local AddonDB_Defaults = {
 	global = {
@@ -54,7 +52,7 @@ local classIDs = setmetatable({}, {
 })
 
 local function ScanTalents()
-	local data = addon.ThisCharacter
+	local data = talents.ThisCharacter
 	local specs = {}
 
 	for specNum = 1, GetNumSpecGroups() do
@@ -62,12 +60,12 @@ local function ScanTalents()
 		local specID = specialization and GetSpecializationInfo(specialization) or nil
 		table.insert(specs, specID)
 
-		local talents = {}
+		local talentChoices = {}
 		for tier = 1, GetMaxTalentTier() do
 			local isUnspent, selection = GetTalentRowSelectionInfo(tier)
-			table.insert(talents, selection or 0)
+			table.insert(talentChoices, selection or 0)
 		end
-		data['talents'..specNum] = strjoin('|', unpack(talents))
+		data['talents'..specNum] = strjoin('|', unpack(talentChoices))
 	end
 
 	data.active = GetActiveSpecGroup()
@@ -91,7 +89,7 @@ local glyphNameByID = setmetatable({}, {
 })
 
 local function ScanGlyphs()
-	local data = addon.ThisCharacter
+	local data = talents.ThisCharacter
 	wipe(data.glyphs)
 
 	for specNum = 1, GetNumSpecGroups() do
@@ -110,13 +108,13 @@ end
 
 local function ScanGlyphList()
 	-- Blizzard provides no GetGlyphInfo(glyphID) function so we need to store all this data ourselves
-	local data = addon.ThisCharacter
+	local data = talents.ThisCharacter
 	-- data.knownGlyphs = 0
 	if type(data.knownGlyphs) ~= 'table' then data.knownGlyphs = {} end
 	wipe(data.knownGlyphs)
 
 	local _, class = UnitClass('player')
-	local glyphs = addon.db.global.Glyphs[class]
+	local glyphs = talents.db.global.Glyphs[class]
 	wipe(glyphs)
 
 	-- show all glyphs for scanning
@@ -227,13 +225,13 @@ end
 local function _GetGlyphLink(glyphID, glyphName)
 	glyphName = glyphName or glyphNameByID[glyphID]
 	if glyphName then
-		return format("|cff66bbff|Hglyph:%s|h[%s]|h|r", glyphID, glyphName)
+		return format('|cff66bbff|Hglyph:%s|h[%s]|h|r', glyphID, glyphName)
 	end
 end
 
 local function _GetNumGlyphs(character)
 	local _, class = DataStore:GetCharacterClass(character.key)
-	local glyphs = addon.db.global.Glyphs[class]
+	local glyphs = talents.db.global.Glyphs[class]
 
 	local count = 0
 	for _ in pairs(glyphs) do
@@ -245,7 +243,7 @@ end
 -- arguments: <glyph: itemID | glyphID | glyphName>, returns: isKnown, isCorrectClass
 local function _IsGlyphKnown(character, glyph)
 	local _, class = DataStore:GetCharacterClass(character.key)
-	local glyphs = addon.db.global.Glyphs[class]
+	local glyphs = talents.db.global.Glyphs[class]
 
 	local canLearn = false
 	if type(glyph) == 'number' and glyphs[glyph] then
@@ -273,10 +271,10 @@ end
 
 local function _GetGlyphInfo(character, index)
 	local _, class = DataStore:GetCharacterClass(character.key)
-	local glyphs = addon.db.global.Glyphs[class]
+	local glyphs = talents.db.global.Glyphs[class]
 
 	local glyphID    = GetGlyphAtIndex(glyphs, index)
-	local glyphData  = addon.db.global.Glyphs[class][glyphID]
+	local glyphData  = talents.db.global.Glyphs[class][glyphID]
 	if not glyphData then return end
 
 	local _, glyphType, _, icon, specNames = strsplit('|', glyphData)
@@ -291,7 +289,7 @@ local function _GetGlyphInfoByID(glyphID)
 	local glyphName = glyphNameByID[glyphID]
 	local link = _GetGlyphLink(glyphID, glyphName)
 
-	for class, glyphs in pairs(addon.db.global.Glyphs) do
+	for class, glyphs in pairs(talents.db.global.Glyphs) do
 		if glyphs[glyphID] then
 			local _, glyphType, _, icon, specNames = strsplit('|', glyphs[glyphID])
 			return glyphName, tonumber(glyphType), false, 'Interface\\Icons\\'..icon, glyphID, link, specNames
@@ -318,7 +316,7 @@ local function _GetTalentLink(index, class, compatibilityMode)
 	if compatibilityMode then
 		-- this code is old and talent links only reference the current character's talents
 		local id, name = index, compatibilityMode
-		return format("|cff4e96f7|Htalent:%s|h[%s]|h|r", id, name)
+		return format('|cff4e96f7|Htalent:%s|h[%s]|h|r', id, name)
 	else
 		class = classIDs[class]
 		return GetTalentLink(index, true, class)
@@ -326,7 +324,7 @@ local function _GetTalentLink(index, class, compatibilityMode)
 end
 local function _GetClassTrees(class)
 	local class = classIDs[class]
-	if type(class) == "number" then
+	if type(class) == 'number' then
 		local specID = 1
 		return function()
 			local id, specName = GetSpecializationInfoForClassID(class, specID)
@@ -337,16 +335,16 @@ local function _GetClassTrees(class)
 	end
 end
 local function _GetTreeInfo(class, tree)
-	if type(tree) ~= "number" then return end
+	if type(tree) ~= 'number' then return end
 	local class = classIDs[class]
-	if type(class) == "number" then
+	if type(class) == 'number' then
 		local _, _, _, icon, background = GetSpecializationInfoForClassID(class, tree)
 		return icon, background
 	end
 end
 local function _GetTreeNameByID(class, id)
 	local class = classIDs[class]
-	if type(class) == "number" then
+	if type(class) == 'number' then
 		local _, name = GetSpecializationInfoForClassID(class, id)
 		return name
 	end
@@ -371,30 +369,30 @@ local PublicMethods = {
 	IsGlyphKnown     = _IsGlyphKnown,
 }
 
-function addon:OnInitialize()
-	addon.db = LibStub("AceDB-3.0"):New(addonName .. "DB", AddonDB_Defaults)
+function talents:OnInitialize()
+	self.db = LibStub('AceDB-3.0'):New(moduleName .. 'DB', AddonDB_Defaults)
 
-	DataStore:RegisterModule(addonName, addon, {})
+	DataStore:RegisterModule(moduleName, self, {})
 	for methodName, method in pairs(PublicMethods) do
-		ns.RegisterOverride(addon, methodName, method)
+		addon.RegisterOverride(self, methodName, method)
 	end
-	ns.SetOverrideType('GetTalentRank', 'character')
+	addon.SetOverrideType('GetTalentRank', 'character')
 
-	ns.SetOverrideType('GetSpecialization', 'character')
-	ns.SetOverrideType('GetSpecializationID', 'character')
-	ns.SetOverrideType('GetNumUnspentTalents', 'character')
-	ns.SetOverrideType('GetTalentSelection', 'character')
-	ns.SetOverrideType('GetTalentInfo', 'character')
+	addon.SetOverrideType('GetSpecialization', 'character')
+	addon.SetOverrideType('GetSpecializationID', 'character')
+	addon.SetOverrideType('GetNumUnspentTalents', 'character')
+	addon.SetOverrideType('GetTalentSelection', 'character')
+	addon.SetOverrideType('GetTalentInfo', 'character')
 
-	ns.SetOverrideType('GetGlyphInfo', 'character')
-	ns.SetOverrideType('GetGlyphInfoByID', 'character')
-	ns.SetOverrideType('IsGlyphKnown', 'character')
+	addon.SetOverrideType('GetGlyphInfo', 'character')
+	addon.SetOverrideType('GetGlyphInfoByID', 'character')
+	addon.SetOverrideType('IsGlyphKnown', 'character')
 end
 
 -- *** Event Handlers ***
-function addon:OnEnable()
+function talents:OnEnable()
 	local initialized
-	addon:RegisterEvent('PLAYER_LOGIN', function(...)
+	self:RegisterEvent('PLAYER_LOGIN', function(...)
 		ScanTalents()
 		if not initialized then
 			ScanGlyphs()
@@ -402,20 +400,20 @@ function addon:OnEnable()
 			initialized = true
 		end
 	end)
-	addon:RegisterEvent('PLAYER_TALENT_UPDATE', ScanTalents)
+	self:RegisterEvent('PLAYER_TALENT_UPDATE', ScanTalents)
 
-	addon:RegisterEvent('GLYPH_ADDED', ScanGlyphs)
-	addon:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
-	addon:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
-	addon:RegisterEvent('USE_GLYPH', ScanGlyphList)
+	self:RegisterEvent('GLYPH_ADDED', ScanGlyphs)
+	self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
+	self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
+	self:RegisterEvent('USE_GLYPH', ScanGlyphList)
 end
 
-function addon:OnDisable()
-	addon:UnregisterEvent('PLAYER_LOGIN')
-	addon:UnregisterEvent('PLAYER_TALENT_UPDATE')
+function talents:OnDisable()
+	self:UnregisterEvent('PLAYER_LOGIN')
+	self:UnregisterEvent('PLAYER_TALENT_UPDATE')
 
-	addon:UnregisterEvent('GLYPH_ADDED')
-	addon:UnregisterEvent('GLYPH_REMOVED')
-	addon:UnregisterEvent('GLYPH_UPDATED')
-	addon:UnregisterEvent('USE_GLYPH')
+	self:UnregisterEvent('GLYPH_ADDED')
+	self:UnregisterEvent('GLYPH_REMOVED')
+	self:UnregisterEvent('GLYPH_UPDATED')
+	self:UnregisterEvent('USE_GLYPH')
 end
