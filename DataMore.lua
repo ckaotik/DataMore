@@ -112,3 +112,14 @@ function addon.GetLinkID(link)
 	end
 	return tonumber(id), linkType
 end
+
+function addon.IsBaseLink(itemLink)
+	local itemID, linkType = addon.GetLinkID(itemLink)
+	if not itemID or linkType ~= 'item' then return end
+
+	-- @see http://wowpedia.org/ItemString
+	-- item:itemId:enchantId:jewelId1:jewelId2:jewelId3:jewelId4:suffixId:uniqueId:linkLevel:reforgeId:upgradeId
+	local _, simpleLink = GetItemInfo(itemID)
+	local cleanedLink = itemLink:gsub('item:([^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:)[^:]+(.+)$', 'item:%10%2')
+	return cleanedLink == simpleLink
+end

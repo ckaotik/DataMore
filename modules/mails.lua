@@ -14,7 +14,7 @@ local DEFAULT_STATIONERY = 'Interface\\Icons\\INV_Misc_Note_01'
 -- these subtables need unique identifier
 local AddonDB_Defaults = {
 	global = {
-		Options = {
+		Settings = {
 			ReadMails = false,
 		},
 		Characters = {
@@ -44,7 +44,7 @@ local AddonDB_Defaults = {
 	}
 }
 
-local function ScanMail(mails, index)
+local function ScanMail(index)
 	local mail = {}
 
 	local icon, stationery, sender, subject, money, CODAmount, daysLeft, numAttachments, wasRead, wasReturned, textCreated, canReply = GetInboxHeaderInfo(index)
@@ -57,7 +57,7 @@ local function ScanMail(mails, index)
 	mail.expires = time() + daysLeft*24*60*60
 	mail.lastUpdate = time()
 
-	if addon.db.global.Options['ReadMails'] then
+	if mails.db.global.Settings['ReadMails'] then
 		-- this marks mail as read
 		mail.message = GetInboxText(index)
 	end
@@ -67,11 +67,9 @@ local function ScanMail(mails, index)
 		local itemLink = GetInboxItemLink(index, attachmentIndex)
 		local _, _, count = GetInboxItem(index, attachmentIndex)
 		if itemLink then
-			local itemID = mails.GetLinkID(itemLink)
-			local _, simpleLink = GetItemInfo(itemID)
 			table.insert(mail.attachments, {
-				itemID = itemID,
-				itemLink = itemLink ~= simpleLink and itemLink or nil,
+				itemID = addon.GetLinkID(itemLink),
+				itemLink = not addon.IsBaseLink(itemLink) and itemLink or nil,
 				count = count,
 			})
 		end
@@ -134,11 +132,9 @@ local function OnSendMail(recipient, subject, body)
 		local _, _, count = GetSendMailItem(index)
 		local itemLink = GetSendMailItemLink(index)
 		if itemLink then
-			local itemID = mails.GetLinkID(itemLink)
-			local _, simpleLink = GetItemInfo(itemID)
 			table.insert(mail.attachments, {
-				itemID = itemID,
-				itemLink = itemLink ~= simpleLink and itemLink or nil,
+				itemID = addon.GetLinkID(itemLink),
+				itemLink = not addon.IsBaseLink(itemLink) and itemLink or nil,
 				count = count,
 			})
 		end
@@ -198,9 +194,19 @@ end
 function mails:OnEnable()
 	hooksecurefunc('SendMail', OnSendMail)
 
-	-- self:RegisterEvent('LFG_LOCK_INFO_RECEIVED', UpdateLFGStatus)
+	self:RegisterEvent('MAIL_SHOW', function()
+		self:RegisterEvent('MAIL_INBOX_UPDATE', ScanInbox)
+		self:RegisterEvent('MAIL_SUCCESS', ScanInbox)
+	end)
+	self:RegisterEvent('MAIL_CLOSED', function()
+		self:UnregisterEvent('MAIL_INBOX_UPDATE', ScanInbox)
+		self:UnregisterEvent('MAIL_SUCCESS', ScanInbox)
+	end)
 end
 
 function mails:OnDisable()
-	-- self:UnregisterEvent('LFG_LOCK_INFO_RECEIVED')
+	self:UnregisterEvent('MAIL_SHOW')
+	self:UnregisterEvent('MAIL_CLOSED')
+	self:UnregisterEvent('MAIL_INBOX_UPDATE')
+	self:UnregisterEvent('MAIL_SUCCESS')
 end
