@@ -108,7 +108,7 @@ local PublicMethods = {
 	IsWeeklyQuestCompletedBy = _IsWeeklyQuestCompletedBy,
 }
 
-function addon:OnInitialize()
+function lockouts:OnInitialize()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
