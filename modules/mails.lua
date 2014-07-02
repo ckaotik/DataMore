@@ -1,5 +1,3 @@
--- if true then return end
-
 local addonName, addon, _ = ...
 local mails = addon:NewModule('Mails', 'AceEvent-3.0')
 
@@ -8,10 +6,10 @@ local mails = addon:NewModule('Mails', 'AceEvent-3.0')
 -- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, table, type
 
 local thisCharacter = DataStore:GetCharacter()
-local _, playerRealm = UnitFullName('player')
+local playerRealm = UnitFullName('player')
 
 local DEFAULT_STATIONERY = 'Interface\\Icons\\INV_Misc_Note_01'
-local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED = 0, 1, 2
+local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED, STATUS_RETURNED_READ = 0, 1, 2, 3
 
 -- these subtables need unique identifier
 local AddonDB_Defaults = {
@@ -24,9 +22,9 @@ local AddonDB_Defaults = {
 				Mails = {
 					['*'] = {
 						sender = nil,
-						subject = nil,
-						message = nil,
-						stationery = nil,
+						subject = '',
+						message = '',
+						stationery = DEFAULT_STATIONERY,
 						expires = 0,
 						status = STATUS_UNREAD,
 						lastUpdate = nil,
@@ -47,6 +45,37 @@ local AddonDB_Defaults = {
 	}
 }
 
+local function GetRecipientKey(recipient, realm)
+	if recipient and realm then
+		-- yes, I'm that lazy
+		recipient = strjoin('-', recipient, realm:gsub(' ', ''))
+	end
+	local recipientName, recipientRealm = strsplit('-', recipient)
+	if not recipientRealm or recipientRealm == '' then
+		recipientRealm = playerRealm
+	end
+	recipientName, recipientRealm = recipientName:lower(), recipientRealm:lower()
+
+	-- figure out who this mail goes to
+	local recipientKey
+	for account in pairs(DataStore:GetAccounts()) do
+		for realm in pairs(DataStore:GetRealms(account)) do
+			if recipientRealm == realm:lower():gsub(' ', '') then
+				for characterName, characterKey in pairs(DataStore:GetCharacters(realm, account)) do
+					if characterName:lower() == recipientName then
+						-- found the recipient!
+						recipientKey = characterKey
+					end
+					if recipientKey then break end
+				end
+			end
+			if recipientKey then break end
+		end
+		if recipientKey then break end
+	end
+	return recipientKey
+end
+
 local function ScanMail(index, ...)
 	if not index then return end
 
@@ -59,9 +88,15 @@ local function ScanMail(index, ...)
 
 		-- marks mail as read
 		message = mails.db.global.Settings['ReadMails'] and GetInboxText(index) or nil
-		local wasRead, wasReturned
-		_, stationery, sender, subject, money, CODAmount, daysLeft, _, wasRead, wasReturned = GetInboxHeaderInfo(index)
-		status = (wasReturned and STATUS_RETURNED) or (wasRead and STATUS_READ) or STATUS_UNREAD
+		local wasRead, wasReturned, icon
+		icon, stationery, sender, subject, money, CODAmount, daysLeft, _, wasRead, wasReturned = GetInboxHeaderInfo(index)
+		if not icon or not sender then return end
+
+		status = (wasReturned and wasRead and STATUS_RETURNED_READ)
+			or (wasReturned and STATUS_RETURNED)
+			or (wasRead and STATUS_READ)
+			or STATUS_UNREAD
+		sender = sender:find('-') and sender or strjoin('-', sender, playerRealm)
 	else
 		-- outbox
 		character = mails.db.global.Characters[index]
@@ -75,12 +110,12 @@ local function ScanMail(index, ...)
 	table.insert(character.Mails, {})
 	local mail = character.Mails[ #character.Mails ]
 
-	mail.sender = sender:find('-') and sender or strjoin('-', sender, playerRealm)
+	mail.sender = sender
 	mail.subject = subject
 	mail.message = message
 	mail.stationery = stationery ~= DEFAULT_STATIONERY and stationery or nil
-	mail.money = ((money and money > 0) and money) or ((CODAmount and CODAmount > 0) and -1*CODAmount)
-	mail.expires = time() + daysLeft*24*60*60
+	mail.money = ((money and money > 0) and money) or ((CODAmount and CODAmount > 0) and -1*CODAmount) or 0
+	mail.expires = math.floor(time() + daysLeft*24*60*60)
 	mail.status = status
 	mail.lastUpdate = time()
 
@@ -119,43 +154,34 @@ local function ScanInbox()
 	local character = mails.ThisCharacter
 	wipe(character.Mails)
 
-	print('Scan Inbox')
-
 	for index = 1, GetInboxNumItems() do
 		ScanMail(index)
 	end
+
+	character.lastUpdate = time()
 end
 
 local function OnSendMail(recipient, subject, body)
-	local recipientName, recipientRealm = strsplit('-', recipient)
-	if not recipientRealm or recipientRealm == '' then
-		recipientRealm = GetRealmName('player')
-	end
-	recipientName, recipientRealm = recipientName:lower(), recipientRealm:lower()
-
-	-- figure out who this mail goes to
-	local recipientKey
-	for account in pairs(DataStore:GetAccounts()) do
-		for realm in pairs(DataStore:GetRealms(account)) do
-			if recipientRealm == realm:lower():gsub(' ', '') then
-				for characterName, characterKey in pairs(DataStore:GetCharacters(account, realm)) do
-					if characterName == recipientName then
-						-- found the recipient!
-						recipientKey = characterKey
-					end
-					if recipientKey then break end
-				end
-			end
-			if recipientKey then break end
-		end
-		if recipientKey then break end
-	end
-
+	local recipientKey = GetRecipientKey(recipient)
 	-- TODO: check guildies (@see DataStore_Mails:SendGuildMail())
-	if not recipientKey or recipientKey == thisCharacter then return end
 
-	print('Sent mail to', recipientKey)
+	if not recipientKey or recipientKey == thisCharacter then return end
 	ScanMail(recipientKey, recipient, subject, body)
+end
+
+local function OnReturnMail(mailIndex)
+	-- Note: GetInboxHeaderInfo(mailIndex), GetInboxItemLink & CO WORK HERE!
+	local mail = mails.ThisCharacter.Mails[mailIndex]
+	local recipientKey = GetRecipientKey(mail.sender)
+	mail.sender = thisCharacter
+	mail.status = STATUS_RETURNED
+	table.insert(mails.db.global.Characters[recipientKey].Mails, mail)
+end
+
+local function OnOpenMail()
+	-- this handles a one-time scan when opening the mail frame
+	ScanInbox()
+	mails:UnregisterEvent('MAIL_INBOX_UPDATE')
 end
 
 -- --------------------------------------------------------
@@ -201,15 +227,15 @@ function mails:OnInitialize()
 end
 
 function mails:OnEnable()
-	hooksecurefunc('SendMail', OnSendMail)
+	_, playerRealm = UnitFullName('player')
 
+	hooksecurefunc('SendMail', OnSendMail)
+	hooksecurefunc('ReturnInboxItem', OnReturnMail)
+	-- we don't handle DeleteInboxItem since MAIL_SUCCESS fires directly afterwards
+
+	self:RegisterEvent('MAIL_SUCCESS', ScanInbox)
 	self:RegisterEvent('MAIL_SHOW', function()
-		self:RegisterEvent('MAIL_INBOX_UPDATE', ScanInbox)
-		self:RegisterEvent('MAIL_SUCCESS', ScanInbox)
-	end)
-	self:RegisterEvent('MAIL_CLOSED', function()
-		self:UnregisterEvent('MAIL_INBOX_UPDATE', ScanInbox)
-		self:UnregisterEvent('MAIL_SUCCESS', ScanInbox)
+		self:RegisterEvent('MAIL_INBOX_UPDATE', OnOpenMail)
 	end)
 end
 
