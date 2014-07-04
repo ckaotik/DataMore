@@ -23,6 +23,7 @@ DataMore.lua
 # modules
 modules\equipment.lua
 modules\inventory.lua
+modules\factions.lua
 modules\lockouts.lua
 modules\mails.lua
 modules\quests.lua

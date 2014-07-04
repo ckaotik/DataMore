@@ -6,7 +6,7 @@ local mails = addon:NewModule('Mails', 'AceEvent-3.0')
 -- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, table, type
 
 local thisCharacter = DataStore:GetCharacter()
-local playerRealm = UnitFullName('player')
+local playerRealm
 
 local DEFAULT_STATIONERY = 'Interface\\Icons\\INV_Misc_Note_01'
 local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED, STATUS_RETURNED_READ = 0, 1, 2, 3
@@ -145,7 +145,7 @@ local function ScanMail(index, ...)
 		end)
 		if not character.lastUpdate then
 			-- apply lastUpdate so data is considered valid
-			character.lastUpdate = time()
+			character.lastUpdate = 0
 		end
 	end
 end

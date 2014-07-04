@@ -122,7 +122,7 @@ local function UpdateQuestProgress()
 
 			local requiredMoney = GetQuestLogRequiredMoney(questIndex)
 			if requiredMoney > 0 then
-				questProgress[questID][0] = requiredMoney
+				questProgress[questID][0] = math.ceil(requiredMoney/10000)
 			end
 
 			local numObjectives = GetNumQuestLeaderBoards(questIndex)
