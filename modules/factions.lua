@@ -2,8 +2,8 @@ local addonName, addon, _ = ...
 local factions = addon:NewModule('Factions', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore
--- GLOBALS: GetNumFactions, GetFactionInfo, GetFriendshipReputation, ExpandFactionHeader, CollapseFactionHeader
--- GLOBALS: wipe, select, strsplit, pairs, hooksecurefunc
+-- GLOBALS: GetNumFactions, GetFactionInfo, GetFactionInfoByID, GetFriendshipReputation, ExpandFactionHeader, CollapseFactionHeader
+-- GLOBALS: wipe, select, strsplit, pairs, hooksecurefunc, tonumber, time
 
 --[[ NOTE: most info is accessible by using these functions
 	GetFactionInfoByID(factionID) returns name, description, standingID, barMin, barMax, barValue, atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep, isWatched, isIndented, factionID, hasBonus, canBeLFGBonus
@@ -76,19 +76,38 @@ end
 --  API functions
 -- --------------------------------------------------------
 function factions.GetFriendshipStanding(reputation)
-	for standingID = #friendshipStandings, 1, -1 do
+	local standingID, standingLabel, standingLow, standingHigh
+	for standing = #friendshipStandings, 1, -1 do
 		if reputation >= friendshipStandings[standingID] then
-			return standingID, friendStandingsTexts[standingID]
+			standingID, standingLabel = standing, friendStandingsTexts[standing]
+			standingLow, standingHigh = friendshipStandings[standing], friendshipStandings[standing + 1]
+			break
 		end
 	end
+	return standingID, standingLabel, standingLow or 0, standingHigh or standingLow or 0
 end
 
 function factions.GetReputationStanding(reputation)
-	for standingID = #reputationStandings, 1, -1 do
-		-- GetText('FACTION_STANDING_LABEL'..standingID, UnitSex('player'))
+	local standingID, standingLabel, standingLow, standingHigh
+	for standing = #reputationStandings, 1, -1 do
 		if reputation >= reputationStandings[standingID] then
-			return standingID, _G['FACTION_STANDING_LABEL'..standingID]
+			-- GetText('FACTION_STANDING_LABEL'..standingID, UnitSex('player'))
+			standingID, standingLabel = standing, _G['FACTION_STANDING_LABEL'..standing]
+			standingLow, standingHigh = reputationStandings[standing], reputationStandings[standing + 1]
+			break
 		end
+	end
+	return standingID, standingLabel, standingLow or 0, standingHigh or standingLow or 0
+end
+
+function factions.GetStanding(reputation, factionID)
+	local _, _, _, _, _, _, _, _, isHeader, _, hasRep = GetFactionInfoByID(factionID)
+	if isHeader and not hasRep then return end
+
+	if GetFriendshipReputation(factionID) then
+		return factions.GetFriendshipStanding(reputation)
+	else
+		return factions.GetReputationStanding(reputation)
 	end
 end
 
@@ -105,14 +124,8 @@ function factions.GetFactionInfoByID(character, factionID)
 	local reputation = character.reputations[factionID]
 	if not reputation then return end
 
-	local standingID, standingText
-	if GetFriendshipReputation(factionID) then
-		-- friendship factions use different labels
-		standingID, standingText = factions.GetFriendshipStanding(reputation)
-	else
-		standingID, standingText = factions.GetReputationStanding(reputation)
-	end
-	return factionID, reputation, standingID, standingText
+	local standingID, standingText, low, high = factions.GetStanding(reputation, factionID)
+	return factionID, reputation, standingID, standingText, low, high
 end
 
 function factions.GetFactionInfo(character, index)
@@ -138,6 +151,7 @@ local PublicMethods = {
 	-- general functions
 	GetFriendshipStanding = factions.GetFriendshipStanding,
 	GetReputationStanding = factions.GetReputationStanding,
+	GetStanding           = factions.GetStanding,
 	-- character functions
 	GetNumFactions        = factions.GetNumFactions,
 	GetFactionInfoGuild   = factions.GetFactionInfoGuild,
@@ -170,7 +184,15 @@ end
 function factions:OnEnable()
 	hooksecurefunc('SetFactionActive', ScanReputations)
 	hooksecurefunc('SetFactionInactive', ScanReputations)
+	-- TODO: check events
 	self:RegisterEvent('UPDATE_FACTION', ScanReputations)
+	-- add event for guild join (=> resets reputation)
+	--[[
+	DataStore_Reputations uses these:
+	addon:RegisterEvent("PLAYER_ALIVE", OnPlayerAlive)
+	addon:RegisterEvent("COMBAT_TEXT_UPDATE", OnFactionChange)
+	addon:RegisterEvent("PLAYER_GUILD_UPDATE", OnPlayerGuildUpdate)
+	--]]
 
 	ScanReputations()
 end
