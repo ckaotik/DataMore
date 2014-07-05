@@ -78,7 +78,7 @@ end
 function factions.GetFriendshipStanding(reputation)
 	local standingID, standingLabel, standingLow, standingHigh
 	for standing = #friendshipStandings, 1, -1 do
-		if reputation >= friendshipStandings[standingID] then
+		if reputation >= friendshipStandings[standing] then
 			standingID, standingLabel = standing, friendStandingsTexts[standing]
 			standingLow, standingHigh = friendshipStandings[standing], friendshipStandings[standing + 1]
 			break
@@ -90,7 +90,7 @@ end
 function factions.GetReputationStanding(reputation)
 	local standingID, standingLabel, standingLow, standingHigh
 	for standing = #reputationStandings, 1, -1 do
-		if reputation >= reputationStandings[standingID] then
+		if reputation >= reputationStandings[standing] then
 			-- GetText('FACTION_STANDING_LABEL'..standingID, UnitSex('player'))
 			standingID, standingLabel = standing, _G['FACTION_STANDING_LABEL'..standing]
 			standingLow, standingHigh = reputationStandings[standing], reputationStandings[standing + 1]
