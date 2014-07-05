@@ -1,31 +1,32 @@
 local addonName, addon, _ = ...
 local factions = addon:NewModule('Factions', 'AceEvent-3.0')
 
--- GLOBALS: _G
--- GLOBALS:
--- GLOBALS:
+-- GLOBALS: _G, LibStub, DataStore
+-- GLOBALS: GetNumFactions, GetFactionInfo, GetFriendshipReputation, ExpandFactionHeader, CollapseFactionHeader
+-- GLOBALS: wipe, select, strsplit, pairs, hooksecurefunc
 
-local thisCharacter = DataStore:GetCharacter()
-
---[[
-name,       desc, standing, min,     max,     rep, war,  _,  hdr, clps, rep, _, indnt,  id, bonus, lfg
-"Gilde", 			 "", 4, 0, 		 3000,      0, nil, nil,   1, nil, nil, nil, nil, 1169, false, false
-"Mondklingen", 		 "", 8, 42000, 	43000,  42999, nil, nil, nil, nil, nil, nil, nil, 1168, false, false
-"Mists of Pandaria", "", 4, 0, 		 3000,      0, nil,   1,   1, nil, nil, nil, nil, 1245, false, false
-"Die Klaxxi", 		 "", 5, 3000, 	 9000,   3150, nil, nil, nil, nil, nil, nil, nil, 1337,  true,  true
-"Die Ackerbauern",   "", 6, 9000,   21000,  18582, nil, nil,   1, nil,   1, nil,   1, 1272,  true,  true
-"Gina Lehmkrall",    "", 2, 8400,   16800,   9450, nil, nil, nil, nil, nil, nil,   1, 1281, false, false
-
-GetFriendshipReputation(1281)
-1281, 9450, 42999, "Gina Lehmkrall", "F\195\188r Gina Lehmkrall seid Ihr ein Bekannter. Gina mag Sumpflilien und verwirbelte Nebelsuppe.", nil, "Bekannter", 8400, 16800
+--[[ NOTE: most info is accessible by using these functions
+	GetFactionInfoByID(factionID) returns name, description, standingID, barMin, barMax, barValue, atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep, isWatched, isIndented, factionID, hasBonus, canBeLFGBonus
+	GetFriendshipReputation(factionID) returns friendID, friendRep, friendMaxRep, friendName, friendText, friendTexture, friendTextLevel, friendThreshold, nextFriendThreshold
 --]]
 
--- NOTE: most info is accessible by using GetFactionInfoByID(factionID) in the client addon
--- local name, description, standingID, barMin, barMax, barValue, atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep, isWatched, isIndented, factionID, hasBonus, canBeLFGBonus = GetFactionInfoByID(factionID)
--- friendID, friendRep, friendMaxRep, friendName, friendText, friendTexture, friendTextLevel, friendThreshold, nextFriendThreshold = GetFriendshipReputation(factionID)
+local thisCharacter = DataStore:GetCharacter()
+local FACTION_INACTIVE = -1
 
-local collapsedHeaders = {}
+local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000 }
+local friendshipStandings = { 0, 8400, 16800, 25200, 33600, 42000, 42999 }
+local friendStandingsTexts = {} -- filled on scan .. this sucks, see @TODO below
+
+-- --------------------------------------------------------
+--  Data Management
+-- --------------------------------------------------------
+local collapsedHeaders, isScanning = {}, false
 local function ScanReputations()
+	if isScanning then return end
+	isScanning = true
+
+	local character = factions.ThisCharacter
+	wipe(character.reputations)
 	wipe(collapsedHeaders)
 
 	-- expand everything while storing original states
@@ -34,7 +35,7 @@ local function ScanReputations()
 		local name, _, _, _, _, _, _, _, isHeader, isCollapsed, _, _, _, factionID = GetFactionInfo(index)
 		if isHeader and isCollapsed then
 			-- 'Inactive' doesn't have a factionID
-			collapsedHeaders[factionID or name] = true
+			collapsedHeaders[factionID or FACTION_INACTIVE] = true
 			-- expand on the go (top->bottom) makes sure we get everything
 			ExpandFactionHeader(index)
 			-- TODO: do we want to keep proper order? then we'll have to SetFactionActive(index)
@@ -44,40 +45,136 @@ local function ScanReputations()
 	end
 
 	-- now do the actual scan
+	local factionList
 	for index = 1, GetNumFactions() do
 		local name, _, standingID, _, _, reputation, atWarWith, _, isHeader, isCollapsed, hasRep, _, isIndented, factionID, hasBonus, canBeLFGBonus = GetFactionInfo(index)
-		local friendID, friendRep, friendMaxRep, friendName, friendText, friendTexture, friendTextLevel, friendThreshold, nextFriendThreshold = GetFriendshipReputation(factionID)
-		-- TODO: evaluate and store data
+		local friendID, friendRep, _, _, _, _, friendTextLevel = GetFriendshipReputation(factionID)
+		if friendID then
+			-- TODO: FIXME: only works for standings this character has
+			local friendStanding = factions.GetFriendshipStanding(friendRep)
+			friendStandingsTexts[friendStanding] = friendTextLevel
+		end
+
 		-- print('scanning faction', factionID, name, reputation)
+		factionList = (factionList and factionList..',' or '') .. (factionID or FACTION_INACTIVE)
+		character.reputations[factionID or FACTION_INACTIVE] = reputation
 	end
+	character.factions = factionList
+	character.lastUpdate = time()
 
 	-- restore pre-scan states
 	for index = GetNumFactions(), 1, -1 do
 		local name, _, _, _, _, _, _, _, isHeader, isCollapsed, _, _, _, factionID = GetFactionInfo(index)
-		if isHeader and (collapsedHeaders[factionID] or collapsedHeaders[name]) then
+		if isHeader and (collapsedHeaders[factionID or FACTION_INACTIVE]) then
 			CollapseFactionHeader(index)
+		end
+	end
+	isScanning = false
+end
+
+-- --------------------------------------------------------
+--  API functions
+-- --------------------------------------------------------
+function factions.GetFriendshipStanding(reputation)
+	for standingID = #friendshipStandings, 1, -1 do
+		if reputation >= friendshipStandings[standingID] then
+			return standingID, friendStandingsTexts[standingID]
 		end
 	end
 end
 
--- setup
+function factions.GetReputationStanding(reputation)
+	for standingID = #reputationStandings, 1, -1 do
+		-- GetText('FACTION_STANDING_LABEL'..standingID, UnitSex('player'))
+		if reputation >= reputationStandings[standingID] then
+			return standingID, _G['FACTION_STANDING_LABEL'..standingID]
+		end
+	end
+end
+
+function factions.GetNumFactions(character)
+	local numFactions = 0
+	for factionID, reputation in pairs(character.reputations) do
+		numFactions = numFactions + 1
+	end
+	return numFactions
+end
+
+-- /spew DataStore:GetFactionInfo("Default.Die Aldor.Nemia", 2)
+function factions.GetFactionInfoByID(character, factionID)
+	local reputation = character.reputations[factionID]
+	if not reputation then return end
+
+	local standingID, standingText
+	if GetFriendshipReputation(factionID) then
+		-- friendship factions use different labels
+		standingID, standingText = factions.GetFriendshipStanding(reputation)
+	else
+		standingID, standingText = factions.GetReputationStanding(reputation)
+	end
+	return factionID, reputation, standingID, standingText
+end
+
+function factions.GetFactionInfo(character, index)
+	local factionID = select(index, strsplit(',', character.factions))
+	      factionID = factionID and tonumber(factionID)
+	return factions.GetFactionInfoByID(character, factionID)
+end
+
+function factions.GetFactionInfoByName(character, factionName)
+	for factionID, reputation in pairs(character.reputations) do
+		local name = GetFactionInfo(factionID)
+		if name == factionName then
+			return factions.GetFactionInfoByID(character, factionID)
+		end
+	end
+end
+
+function factions.GetFactionInfoGuild(character)
+	return factions.GetFactionInfoByID(character, 1168)
+end
+
 local PublicMethods = {
---	GetMailStyle = _GetMailStyle,
+	-- general functions
+	GetFriendshipStanding = factions.GetFriendshipStanding,
+	GetReputationStanding = factions.GetReputationStanding,
+	-- character functions
+	GetNumFactions        = factions.GetNumFactions,
+	GetFactionInfoGuild   = factions.GetFactionInfoGuild,
+	GetFactionInfoByName  = factions.GetFactionInfoByName,
+	GetFactionInfoByID    = factions.GetFactionInfoByID,
+	GetFactionInfo        = factions.GetFactionInfo,
 }
 
 function factions:OnInitialize()
-	-- self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
+		global = {
+			Characters = {
+				['*'] = {
+					lastUpdate = nil,
+					factions = nil, -- holds the display order
+					reputations = {}, -- hold the faction's reputaton standing
+				}
+			}
+		}
+	})
 
-	-- DataStore:RegisterModule(self.name, self, PublicMethods)
-	-- DataStore:SetCharacterBasedMethod('GetMailStyle')
+	DataStore:RegisterModule(self.name, self, PublicMethods)
+	DataStore:SetCharacterBasedMethod('GetNumFactions')
+	DataStore:SetCharacterBasedMethod('GetFactionInfoGuild')
+	DataStore:SetCharacterBasedMethod('GetFactionInfoByName')
+	DataStore:SetCharacterBasedMethod('GetFactionInfoByID')
+	DataStore:SetCharacterBasedMethod('GetFactionInfo')
 end
 
 function factions:OnEnable()
-	-- hooksecurefunc('SendMail', OnSendMail)
-	-- self:RegisterEvent('MAIL_SUCCESS', ScanInbox)
-	-- ScanReputations()
+	hooksecurefunc('SetFactionActive', ScanReputations)
+	hooksecurefunc('SetFactionInactive', ScanReputations)
+	self:RegisterEvent('UPDATE_FACTION', ScanReputations)
+
+	ScanReputations()
 end
 
 function factions:OnDisable()
-	-- self:UnregisterEvent('MAIL_SHOW')
+	self:UnregisterEvent('UPDATE_FACTION')
 end
