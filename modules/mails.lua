@@ -173,6 +173,7 @@ local function OnReturnMail(mailIndex)
 	-- Note: GetInboxHeaderInfo(mailIndex), GetInboxItemLink & CO WORK HERE!
 	local mail = mails.ThisCharacter.Mails[mailIndex]
 	local recipientKey = GetRecipientKey(mail.sender)
+	if not recipientKey then return end -- TODO: deal with guildies
 	mail.sender = thisCharacter
 	mail.status = STATUS_RETURNED
 	table.insert(mails.db.global.Characters[recipientKey].Mails, mail)
@@ -214,13 +215,33 @@ local function _GetMailStyle(character, mailIndex)
 	return icon, stationery
 end
 
+-- icon, stationery, sender, subject, money, CODAmount, daysLeft, itemCount, wasRead, wasReturned, textCreated, canReply, isGM, itemQuantity = GetInboxHeaderInfo(index)
+
 -- setup
+--[[
+local DataStore_Mails__PublicMethods = {
+	GetMailboxLastVisit = _GetMailboxLastVisit,
+	GetMailItemCount = _GetMailItemCount,
+	GetMailAttachments = _GetMailAttachments,
+	GetNumMails = _GetNumMails,
+	GetMailInfo = _GetMailInfo,
+	GetMailSender = _GetMailSender,
+	GetMailExpiry = _GetMailExpiry,
+	GetMailSubject = _GetMailSubject,
+	GetNumExpiredMails = _GetNumExpiredMails,
+	SaveMailToCache = _SaveMailToCache,
+	SaveMailAttachmentToCache = _SaveMailAttachmentToCache,
+	IsMailBoxOpen = _IsMailBoxOpen,
+	ClearMailboxEntries = _ClearMailboxEntries,
+}
+--]]
 local PublicMethods = {
+	-- TODO: MOAAAARR! We need more!
 	GetMailStyle = _GetMailStyle,
 }
 
 function mails:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetMailStyle')

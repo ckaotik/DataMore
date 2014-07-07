@@ -369,7 +369,7 @@ local PublicMethods = {
 }
 
 function talents:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults, true)
 
 	DataStore:RegisterModule(self.name, self, {})
 	for methodName, method in pairs(PublicMethods) do

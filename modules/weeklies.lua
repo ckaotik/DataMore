@@ -129,7 +129,7 @@ local PublicMethods = {
 }
 
 function weeklies:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	for funcName, funcImpl in pairs(PublicMethods) do

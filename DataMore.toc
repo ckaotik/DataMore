@@ -11,11 +11,14 @@
 ## X-Category: Misc
 ## X-License: BSD
 
+#@no-lib-strip@
 # libraries
-#libs\LibStub.lua
-libs\LibDataStorage-1.0\LibStub.lua
-libs\LibDataStorage-1.0\CallbackHandler-1.0.lua
-libs\LibDataStorage-1.0\LibDataStorage-1.0.lua
+libs\LibStub\LibStub.lua
+libs\AceAddon-3.0\AceAddon-3.0.lua
+libs\AceDB-3.0\AceDB-3.0.lua
+libs\AceEvent-3.0\AceEvent-3.0.lua
+#@end-no-lib-strip@
+
 
 # core
 DataMore.lua

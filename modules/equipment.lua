@@ -108,7 +108,7 @@ function equipment:OnInitialize()
 				}
 			}
 		}
-	})
+	}, true)
 
 	DataStore:RegisterModule(self.name, self, {
 		GetNumEquipmentSets = _GetNumEquipmentSets,

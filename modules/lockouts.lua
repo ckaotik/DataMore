@@ -7,18 +7,6 @@ local lockouts = addon:NewModule('Lockouts', 'AceEvent-3.0')
 
 local thisCharacter = DataStore:GetCharacter()
 
--- these subtables need unique identifier
-local AddonDB_Defaults = {
-	global = {
-		Characters = {
-			['*'] = {				-- ["Account.Realm.Name"]
-				lastUpdate = nil,
-				LFGs = {},
-			}
-		}
-	}
-}
-
 -- *** Scanning functions ***
 local LFGInfos = {
 	-- GetNumX(), GetXInfo(index) returning same data as GetLFGDungeonInfo(dungeonID)
@@ -109,7 +97,16 @@ local PublicMethods = {
 }
 
 function lockouts:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
+		global = {
+			Characters = {
+				['*'] = {				-- ["Account.Realm.Name"]
+					lastUpdate = nil,
+					LFGs = {},
+				}
+			}
+		}
+	}, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetCurrencyCaps')

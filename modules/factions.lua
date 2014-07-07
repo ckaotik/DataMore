@@ -13,8 +13,8 @@ local factions = addon:NewModule('Factions', 'AceEvent-3.0')
 local thisCharacter = DataStore:GetCharacter()
 local FACTION_INACTIVE = -1
 
-local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000 }
-local friendshipStandings = { 0, 8400, 16800, 25200, 33600, 42000, 42999 }
+local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000, 43000 }
+local friendshipStandings = { 0, 8400, 16800, 25200, 33600, 42000, 43000 }
 local friendStandingsTexts = {} -- filled on scan .. this sucks, see @TODO below
 
 -- --------------------------------------------------------
@@ -171,7 +171,7 @@ function factions:OnInitialize()
 				}
 			}
 		}
-	})
+	}, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetNumFactions')
