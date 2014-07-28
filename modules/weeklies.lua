@@ -1,5 +1,5 @@
 local addonName, addon = ...
-local weeklies   = addon:NewModule('Weeklies', 'AceEvent-3.0') -- 'AceConsole-3.0'
+local weeklies = addon:NewModule('Weeklies', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 -- GLOBALS: LibStub, DataStore
 -- GLOBALS: IsAddOnLoaded, GetCurrencyListSize, GetCurrencyListLink, GetCurrencyInfo
@@ -19,18 +19,6 @@ local AddonDB_Defaults = {
 		}
 	}
 }
-
---[[
-num = GetNumSavedWorldBosses()
-name, id, reset = GetSavedWorldBossInfo(i)
-instanceID for worldbosses: 322
-WORLD_BOSS_FOUR_CELESTIALS = "The Four Celestials";
-WORLD_BOSS_GALLEON = "Galleon";
-WORLD_BOSS_NALAK = "Nalak";
-WORLD_BOSS_OONDASTA = "Oondasta";
-WORLD_BOSS_ORDOS = "Ordos";
-WORLD_BOSS_SHA_OF_ANGER = "Sha of Anger";
---]]
 
 local function UpdateSavedBosses()
 	local bosses = weeklies.ThisCharacter.WorldBosses
@@ -141,14 +129,11 @@ function weeklies:OnInitialize()
 end
 
 function weeklies:OnEnable()
+	UpdateSavedBosses()
+	UpdateWeeklyCap()
+
+	self:RegisterEvent('UPDATE_INSTANCE_INFO', UpdateSavedBosses)
 	self:RegisterEvent('CURRENCY_DISPLAY_UPDATE', UpdateWeeklyCap)
-	-- TODO: track world boss kills
-	--[[self:RegisterEvent('QUEST_LOG_UPDATE', function()
-		if GetNextMaintenance() then
-			UpdateWeeklyCap()
-			self:UnregisterEvent('QUEST_LOG_UPDATE')
-		end
-	end) --]]
 end
 function weeklies:OnDisable()
 	self:UnregisterEvent('CURRENCY_DISPLAY_UPDATE')

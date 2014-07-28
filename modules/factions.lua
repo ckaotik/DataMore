@@ -131,6 +131,7 @@ end
 function factions.GetFactionInfo(character, index)
 	local factionID = select(index, strsplit(',', character.factions))
 	      factionID = factionID and tonumber(factionID)
+	if not factionID then factionID = next(character.reputations, index > 1 and (index-1) or nil) end
 	return factions.GetFactionInfoByID(character, factionID)
 end
 
@@ -166,7 +167,7 @@ function factions:OnInitialize()
 			Characters = {
 				['*'] = {
 					lastUpdate = nil,
-					factions = nil, -- holds the display order
+					factions = '', -- holds the display order
 					reputations = {}, -- hold the faction's reputaton standing
 				}
 			}

@@ -37,6 +37,7 @@ local function UpdateLFGStatus()
 				-- not available
 				local _, reason, info1, info2 = GetLFDLockInfo(dungeonID, 1)
 				status = string.format('%s:%s:%s', reason or '', info1 or '', info2 or '')
+				status = strtrim(status, ':') -- trim trailing ::
 			end
 
 			local dungeonReset = 0
@@ -60,17 +61,16 @@ local function _GetLFGInfo(character, dungeonID)
 	if not instanceInfo then return end
 
 	local status, reset, numDefeated = string.split('|', instanceInfo)
-	status = tonumber(status) or status
-	if type(status) == 'string' then
-		local playerName, lockedReason, subReason1, subReason2 = strsplit(":", status)
-		if lockedReason == 1029 or lockedReason == 1030 or lockedReason == 1031 then
-			status = _G['INSTANCE_UNAVAILABLE_OTHER_TOO_SOON']
-		else
-			status = string.format(_G['INSTANCE_UNAVAILABLE_SELF_'..(LFG_INSTANCE_INVALID_CODES[lockedReason] or 'OTHER')],
-				playerName, subReason1, subReason2)
-		end
+	local lockedReason, subReason1, subReason2 = strsplit(':', status)
+	      lockedReason = tonumber(lockedReason) or nil
+
+	if lockedReason == 0 or lockedReason == 1 then
+		status = lockedReason == 1 and true or false
+	elseif lockedReason == 1029 or lockedReason == 1030 or lockedReason == 1031 then
+		status = _G['INSTANCE_UNAVAILABLE_OTHER_TOO_SOON']
 	else
-		status = status == 1 and true or false
+		local reasonText = _G['INSTANCE_UNAVAILABLE_SELF_'..(LFG_INSTANCE_INVALID_CODES[lockedReason] or 'OTHER')]
+		status = string.format(reasonText, subReason1, subReason2)
 	end
 
 	return status, tonumber(reset), tonumber(numDefeated)
@@ -124,8 +124,9 @@ function lockouts:OnEnable()
 	local now = time()
 	for characterKey, character in pairs(self.Characters) do
 		for dungeonID, data in pairs(character.LFGs) do
+			-- TODO: not being cleared: 2::|1390356001|0
 			local status, reset, numDefeated = strsplit('|', data)
-			reset = tonumber(reset)
+			              reset = tonumber(reset)
 			if reset and reset ~= 0 and reset < now and tonumber(status) then
 				-- had lockout, lockout expired, LFG is available
 				character.LFGs[dungeonID] = 0
