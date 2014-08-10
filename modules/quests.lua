@@ -18,7 +18,7 @@ local AddonDB_Defaults = {
 }
 
 local function _GetAchievementProgress(character, achievementID)
-	local characterKey = type(character) == 'string' and character or character.key
+	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
 
 	local _, _, _, completed, _, _, _, _, flags = GetAchievementInfo(achievementID)
 	local isShared = bit.band(flags, ACHIEVEMENT_FLAGS_ACCOUNT) == ACHIEVEMENT_FLAGS_ACCOUNT
@@ -42,7 +42,7 @@ local function _GetAchievementProgress(character, achievementID)
 end
 
 local function GetReputationProgress(character, faction, minReputation)
-	local characterKey = type(character) == 'string' and character or character.key
+	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
 
 	local factionName = GetFactionInfoByID(faction)
 	local _, _, currentReputation = DataStore:GetRawReputationInfo(characterKey, factionName)
@@ -133,8 +133,8 @@ local function UpdateQuestProgress()
 				end
 
 				if not finished and progressHandler[questID] and progressHandler[questID][i] then
-					local current, goal = progressHandler[questID][i][1](thisCharacter,
-						select(2, unpack(progressHandler[questID][i])))
+					local handler = progressHandler[questID][i][1]
+					local current, goal = handler(thisCharacter, select(2, unpack(progressHandler[questID][i])))
 					local objective = text:match('^(.+): [^:]+$')
 
 					questProgress[questID][i] = string.format('%s: %s/%s', objective, current or 0, goal or 1)
@@ -162,10 +162,6 @@ function quests:OnInitialize()
 	DataStore:SetCharacterBasedMethod('GetQuestProgress')
 	DataStore:SetCharacterBasedMethod('GetQuestProgressPercentage')
 	DataStore:SetCharacterBasedMethod('GetAchievementProgress')
-
-	for methodName, method in pairs(PublicMethods) do
-		addon.RegisterOverride(self, methodName, method, 'character')
-	end
 end
 
 function quests:OnEnable()

@@ -27,6 +27,7 @@ local function UpdateSavedBosses()
 		local name, id, reset = GetSavedWorldBossInfo(i)
 		bosses[id] = time() + reset
 	end
+	weeklies.ThisCharacter.lastUpdate = time()
 end
 
 local function _GetSavedWorldBosses(character)
@@ -63,6 +64,7 @@ local function _GetCurrencyCaps(character)
 	return character.WeeklyCurrency
 end
 
+-- TODO: try /spew DataStore:GetCurrencyTotals("Default.Die Aldor.Traumwächter", VALOR_CURRENCY)
 local function _GetCurrencyWeeklyAmount(character, currencyID)
 	local lastMaintenance = addon.GetLastMaintenance()
 	if character == thisCharacter then
@@ -95,7 +97,7 @@ local function _GetCurrencyCapInfo(character, currencyID, characterKey)
 end
 
 local function _IsWeeklyQuestCompletedBy(character, questID)
-	local characterKey = type(character) == 'string' and character or character.key
+	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
 	local _, lastUpdate = DataStore:GetQuestHistoryInfo(characterKey)
 	local lastMaintenance = addon.GetLastMaintenance()
 	if not (lastUpdate and lastMaintenance) or lastUpdate < lastMaintenance then
@@ -123,9 +125,6 @@ function weeklies:OnInitialize()
 	for funcName, funcImpl in pairs(PublicMethods) do
 		DataStore:SetCharacterBasedMethod(funcName)
 	end
-
-	-- we need this as an override, since we need access to the characterKey
-	addon.RegisterOverride(self, 'IsWeeklyQuestCompletedBy', _IsWeeklyQuestCompletedBy, 'character')
 end
 
 function weeklies:OnEnable()
@@ -134,6 +133,11 @@ function weeklies:OnEnable()
 
 	self:RegisterEvent('UPDATE_INSTANCE_INFO', UpdateSavedBosses)
 	self:RegisterEvent('CURRENCY_DISPLAY_UPDATE', UpdateWeeklyCap)
+
+	self:RegisterEvent('SHOW_LOOT_TOAST', function()
+		-- trigger updating so we can check for boss kills
+		RequestRaidInfo()
+	end)
 end
 function weeklies:OnDisable()
 	self:UnregisterEvent('CURRENCY_DISPLAY_UPDATE')

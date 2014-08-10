@@ -17,6 +17,8 @@ local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000,
 local friendshipStandings = { 0, 8400, 16800, 25200, 33600, 42000, 43000 }
 local friendStandingsTexts = {} -- filled on scan .. this sucks, see @TODO below
 
+-- @TODO: fix Shlae'gar arena ranks
+
 -- --------------------------------------------------------
 --  Data Management
 -- --------------------------------------------------------
