@@ -1,9 +1,12 @@
 local addonName, addon, _ = ...
-local mails = addon:NewModule('Mails', 'AceEvent-3.0')
+local mails = addon:NewModule('Mails', 'AceEvent-3.0', 'AceComm-3.0', 'AceSerializer-3.0')
+
+local commPrefix = 'DS_Mails'
+local MSG_SENDMAIL_INIT, MSG_SENDMAIL_END, MSG_SENDMAIL_ATTACHMENT, MSG_SENDMAIL_BODY = 1, 2, 3, 4
 
 -- GLOBALS: _G, LibStub, DataStore
--- GLOBALS: GetInboxHeaderInfo, GetItemInfo, GetSendMailItem, GetSendMailItemLink, UnitFullName, GetRealmName, GetSendMailMoney, GetSendMailCOD, GetInboxText, GetInboxItem, GetInboxItemLink, GetInboxNumItems
--- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, table, type
+-- GLOBALS: GetInboxHeaderInfo, GetItemInfo, GetSendMailItem, GetSendMailItemLink, UnitFullName, GetRealmName, GetSendMailMoney, GetSendMailCOD, GetInboxText, GetInboxItem, GetInboxItemLink, GetInboxNumItems, Ambiguate, GetItemIcon
+-- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, ipairs, table, type, coroutine
 
 local thisCharacter = DataStore:GetCharacter()
 local playerRealm
@@ -12,7 +15,7 @@ local DEFAULT_STATIONERY = 'Interface\\Icons\\INV_Misc_Note_01'
 local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED, STATUS_RETURNED_READ = 0, 1, 2, 3
 
 -- these subtables need unique identifier
-local AddonDB_Defaults = {
+local defaults = {
 	global = {
 		Settings = {
 			ReadMails = false,
@@ -45,6 +48,8 @@ local AddonDB_Defaults = {
 	}
 }
 
+-- Data Gathering
+-- --------------------------------------------------------
 local function GetRecipientKey(recipient, realm)
 	if recipient and realm then
 		-- yes, I'm that lazy
@@ -79,13 +84,9 @@ end
 local function ScanMail(index, ...)
 	if not index then return end
 
-	local character, isInbox
+	local isInbox = index > 0
 	local sender, subject, message, money, CODAmount, daysLeft, status, stationery
-	if type(index) == 'number' then
-		-- inbox
-		character = mails.ThisCharacter
-		isInbox = true
-
+	if isInbox then
 		-- marks mail as read
 		message = mails.db.global.Settings['ReadMails'] and GetInboxText(index) or nil
 		local wasRead, wasReturned, icon
@@ -99,17 +100,13 @@ local function ScanMail(index, ...)
 		sender = sender:find('-') and sender or strjoin('-', sender, playerRealm)
 	else
 		-- outbox
-		character = mails.db.global.Characters[index]
-
 		_, subject, message = ...
 		daysLeft, status, stationery = 30, STATUS_UNREAD, DEFAULT_STATIONERY
 		money, CODAmount = GetSendMailMoney(), GetSendMailCOD()
 		sender  = strjoin('-', UnitFullName('player'))
 	end
 
-	table.insert(character.Mails, {})
-	local mail = character.Mails[ #character.Mails ]
-
+	local mail = {}
 	mail.sender = sender
 	mail.subject = subject
 	mail.message = message
@@ -139,15 +136,7 @@ local function ScanMail(index, ...)
 		end
 	end
 
-	if not isInbox then
-		table.sort(character.Mails, function(a, b)
-			return a.expires < b.expires
-		end)
-		if not character.lastUpdate then
-			-- apply lastUpdate so data is considered valid
-			character.lastUpdate = 0
-		end
-	end
+	return mail
 end
 
 local function ScanInbox()
@@ -155,28 +144,76 @@ local function ScanInbox()
 	wipe(character.Mails)
 
 	for index = 1, GetInboxNumItems() do
-		ScanMail(index)
+		local mail = ScanMail(index)
+		table.insert(character.Mails, mail)
 	end
 
 	character.lastUpdate = time()
 end
 
-local function OnSendMail(recipient, subject, body)
-	local recipientKey = GetRecipientKey(recipient)
-	-- TODO: check guildies (@see DataStore_Mails:SendGuildMail())
+local function NotifyGuildMail(mail, player, recipientName)
+	-- we inform <player> that her character <recipientName> received mail
+	local data = mails:Serialize(MSG_SENDMAIL_INIT, recipientName)
+	mails:SendCommMessage(commPrefix, data, 'WHISPER', player)
 
-	if not recipientKey or recipientKey == thisCharacter then return end
-	ScanMail(recipientKey, recipient, subject, body)
+	for index, attachment in ipairs(mail.attachments) do
+		local icon = GetItemIcon(attachment.itemID)
+		local link = attachment.itemLink or select(2, GetItemInfo(attachment.itemID))
+		local data = mails:Serialize(MSG_SENDMAIL_ATTACHMENT, icon, link, attachment.count)
+		mails:SendCommMessage(commPrefix, data, 'WHISPER', player)
+	end
+
+	if mail.money ~= 0 or mail.message ~= '' then
+		local data = mails:Serialize(MSG_SENDMAIL_BODY, mail.subject, mail.message, mail.money)
+		mails:SendCommMessage(commPrefix, data, 'WHISPER', player)
+	end
+	mails:SendCommMessage(commPrefix, mails:Serialize(MSG_SENDMAIL_END), 'WHISPER', player)
 end
 
+local function StoreForeignMail(recipientKey, mail)
+	if not recipientKey or not mail then return end
+	local character = mails.db.global.Characters[recipientKey]
+	table.insert(character.Mails, mail)
+	-- keep sorting intact
+	table.sort(character.Mails, function(a, b)
+		return a.expires < b.expires
+	end)
+
+	if not character.lastUpdate then
+		-- apply lastUpdate so data is considered valid
+		character.lastUpdate = 0
+	end
+end
+
+-- takes required actions when a mail is sent (either via outbox or as a retour)
+local function HandleMail(mail, recipient)
+	local recipientKey = GetRecipientKey(recipient)
+	if recipientKey then
+		-- recipient is an alt
+		StoreForeignMail(recipientKey, mail)
+	else
+		-- might be a guild member
+		local recipientName = Ambiguate(recipient, 'guild')
+		local player = DataStore:GetNameOfMain(recipientName)
+		if player and DataStore:IsGuildMemberOnline(player) then
+			NotifyGuildMail(mail, player, recipientName)
+		end
+	end
+end
+
+-- called on SendMail()
+local function OnSendMail(recipient, subject, body)
+	local mail = ScanMail(0, recipient, subject, body)
+	HandleMail(mail, recipient)
+end
+
+-- called on ReturnMail()
 local function OnReturnMail(mailIndex)
-	-- Note: GetInboxHeaderInfo(mailIndex), GetInboxItemLink & CO WORK HERE!
 	local mail = mails.ThisCharacter.Mails[mailIndex]
-	local recipientKey = GetRecipientKey(mail.sender)
-	if not recipientKey then return end -- TODO: deal with guildies
-	mail.sender = thisCharacter
-	mail.status = STATUS_RETURNED
-	table.insert(mails.db.global.Characters[recipientKey].Mails, mail)
+	local recipient = mail.sender
+	      mail.sender = thisCharacter
+	      mail.status = STATUS_RETURNED
+	HandleMail(mail, recipient)
 end
 
 local function OnOpenMail()
@@ -185,14 +222,19 @@ local function OnOpenMail()
 	mails:UnregisterEvent('MAIL_INBOX_UPDATE')
 end
 
+-- Mixins
 -- --------------------------------------------------------
-local function _GetMail(character, mailIndex)
+function mails.GetNumMails(character)
+	return #(character.Mails)
+end
+
+function mails.GetMail(character, mailIndex)
 	return character.Mails[mailIndex]
 end
 
 -- @returns mailIcon, mailStationaryTexture
-local function _GetMailStyle(character, mailIndex)
-	local mail = _GetMail(character, mailIndex)
+function mails.GetMailStyle(character, mailIndex)
+	local mail = mails.GetMail(character, mailIndex)
 	local icon, stationery = 'Interface\\Icons\\INV_Misc_Note_01', DEFAULT_STATIONERY
 
 	if mail then
@@ -217,34 +259,86 @@ end
 
 -- icon, stationery, sender, subject, money, CODAmount, daysLeft, itemCount, wasRead, wasReturned, textCreated, canReply, isGM, itemQuantity = GetInboxHeaderInfo(index)
 
--- setup
---[[
-local DataStore_Mails__PublicMethods = {
-	GetMailboxLastVisit = _GetMailboxLastVisit,
-	GetMailItemCount = _GetMailItemCount,
-	GetMailAttachments = _GetMailAttachments,
-	GetNumMails = _GetNumMails,
-	GetMailInfo = _GetMailInfo,
-	GetMailSender = _GetMailSender,
-	GetMailExpiry = _GetMailExpiry,
-	GetMailSubject = _GetMailSubject,
-	GetNumExpiredMails = _GetNumExpiredMails,
-	SaveMailToCache = _SaveMailToCache,
-	SaveMailAttachmentToCache = _SaveMailAttachmentToCache,
-	IsMailBoxOpen = _IsMailBoxOpen,
-	ClearMailboxEntries = _ClearMailboxEntries,
+-- Communication
+-- --------------------------------------------------------
+local function HandleGuildNotification(args)
+	local sender, recipientName = unpack(args)
+	local recipientKey = strjoin('.', 'Default', GetRealmName(), recipientName) -- TODO: this can't be correct
+	local mail = {
+		sender = sender, -- TODO: handle realm name
+		attachments = {},
+	}
+	coroutine.yield()
+
+	-- can be triggered multiple times
+	while args.event == MSG_SENDMAIL_ATTACHMENT do
+		local _, icon, itemLink, count = unpack(args)
+		table.insert(mail.attachments, {
+			itemID = addon.GetLinkID(itemLink),
+			itemLink = not addon.IsBaseLink(itemLink) and itemLink or nil,
+			count = count,
+		})
+		coroutine.yield()
+	end
+
+	if args.event == MSG_SENDMAIL_BODY then
+		local _, subject, body, money = unpack(args)
+		mail.subject = subject
+		mail.message = body
+		mail.money   = money
+		coroutine.yield()
+	end
+
+	if args.event == MSG_SENDMAIL_END then
+		mails.db.
+		mails:SendMessage('DATASTORE_GUILD_MAIL_RECEIVED', sender, recipientName)
+	end
+end
+
+local commRoutine, commArgs = nil, {}
+local function ResumeRoutine(event, ...)
+	print('comm', event, 'args', ...)
+	wipe(commArgs)
+	for i = 1, select('#', ...) do
+		commArgs[i] = select(i, ...)
+	end
+	commArgs.event = event
+	commRoutine(commArgs) -- only accepted on first start
+end
+local GuildCommCallbacks = {
+	[MSG_SENDMAIL_INIT] = function(...)
+			commRoutine = coroutine.wrap(HandleGuildNotification)
+			ResumeRoutine(MSG_SENDMAIL_INIT, ...)
+		end,
+	[MSG_SENDMAIL_ATTACHMENT] = function(...) ResumeRoutine(MSG_SENDMAIL_ATTACHMENT, ...) end,
+	[MSG_SENDMAIL_BODY]       = function(...) ResumeRoutine(MSG_SENDMAIL_BODY, ...) end,
+	[MSG_SENDMAIL_END]        = function(...) ResumeRoutine(MSG_SENDMAIL_END, ...) end,
 }
---]]
+
+-- setup
+-- --------------------------------------------------------
 local PublicMethods = {
 	-- TODO: MOAAAARR! We need more!
-	GetMailStyle = _GetMailStyle,
+	-- GetNumMails = mails.GetNumMails,
+	-- GetMailboxLastVisit = _GetMailboxLastVisit,
+	-- GetMailItemCount = _GetMailItemCount,
+	-- GetMailAttachments = _GetMailAttachments,
+	-- GetMailInfo = _GetMailInfo,
+	-- GetMailSender = _GetMailSender,
+	-- GetMailExpiry = _GetMailExpiry,
+	-- GetMailSubject = _GetMailSubject,
+	-- GetNumExpiredMails = _GetNumExpiredMails,
+	GetMailStyle = mails.GetMailStyle,
 }
 
 function mails:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults, true)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetMailStyle')
+
+	-- DataStore:SetGuildCommCallbacks(commPrefix, GuildCommCallbacks)
+	-- self:RegisterComm(commPrefix, DataStore:GetGuildCommHandler())
 end
 
 function mails:OnEnable()
