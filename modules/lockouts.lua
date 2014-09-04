@@ -152,12 +152,32 @@ function lockouts.GetNumInstanceLockouts(character)
 	return total, locked
 end
 
+local sortTable = {}
+function lockouts.IterateInstanceLockouts(character, sorted)
+	wipe(sortTable)
+	for instanceKey in pairs(character.Instances) do
+		table.insert(sortTable, instanceKey)
+	end
+	table.sort(sortTable)
+
+	local index = 1
+	return function()
+		instanceKey = sortTable[index]
+		index = index + 1
+		if instanceKey then
+			local instanceID, difficulty = strsplit('|', instanceKey)
+			return tonumber(instanceID), tonumber(difficulty)
+		end
+	end
+end
+
 function lockouts.GetInstanceLockoutInfo(character, instance, difficulty)
 	if not instance or not difficulty then return end
 	local instanceInfo = character.Instances[strjoin('|', instance, difficulty)]
 	if not instanceInfo then return end
 
-	local instanceReset, extended, isRaid, killedBosses = strsplit('|', instanceInfo)
+	local instanceReset, extended, isRaid = strsplit('|', instanceInfo)
+	local killedBosses = lockouts.GetNumDefeatedEncounters(character, instance, difficulty)
 	-- local resetsIn = instanceReset > 0 and (instanceReset - time()) or 0
 
 	return tonumber(instanceReset), extended == '1', isRaid == '1', tonumber(killedBosses)
@@ -202,6 +222,7 @@ local PublicMethods = {
 	GetNumSavedWorldBosses   = lockouts.GetNumSavedWorldBosses,
 	IsWorldBossKilledBy      = lockouts.IsWorldBossKilledBy,
 	-- Instance Lockouts
+	IterateInstanceLockouts  = lockouts.IterateInstanceLockouts,
 	GetNumInstanceLockouts   = lockouts.GetNumInstanceLockouts,
 	GetInstanceLockoutInfo   = lockouts.GetInstanceLockoutInfo,
 	GetNumDefeatedEncounters = lockouts.GetNumDefeatedEncounters,
