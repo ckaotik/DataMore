@@ -2,8 +2,22 @@ local addonName, addon = ...
 local lockouts = addon:NewModule('Lockouts', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore, EXPANSION_LEVEL
--- GLOBALS: IsAddOnLoaded, UnitLevel, GetQuestResetTime, GetRFDungeonInfo, GetNumRFDungeons, GetLFGDungeonRewardCapInfo, GetLFGDungeonNumEncounters, GetLFGDungeonRewards, GetLFDLockInfo, LFG_INSTANCE_INVALID_CODES, GetNumSavedWorldBosses, GetSavedWorldBossInfo, GetNumSavedInstances, GetSavedInstanceInfo, GetLFGDungeonEncounterInfo
--- GLOBALS: type, next, wipe, pairs, time, date, string, tonumber, math, strsplit, strjoin, strtrim, bit
+-- GLOBALS: IsAddOnLoaded, UnitLevel, GetQuestResetTime, GetRFDungeonInfo, GetNumRFDungeons, GetLFGDungeonRewardCapInfo, GetLFGDungeonNumEncounters, GetLFGDungeonRewards, GetLFDLockInfo, LFG_INSTANCE_INVALID_CODES, GetNumSavedWorldBosses, GetSavedWorldBossInfo, GetNumSavedInstances, GetSavedInstanceInfo, GetLFGDungeonEncounterInfo, GetSavedInstanceChatLink, GetSavedInstanceInfo, GetSavedInstanceEncounterInfo, RequestRaidInfo
+-- GLOBALS: type, next, wipe, pairs, time, date, string, tonumber, math, strsplit, strjoin, strtrim, bit, unpack
+
+local defaults = {
+	global = {
+		Characters = {
+			['*'] = {				-- ["Account.Realm.Name"]
+				lastUpdate = nil,
+				LFGs = {},
+				WorldBosses = {},
+				Instances = {},
+				InstanceLinks = {},
+			}
+		}
+	}
+}
 
 local thisCharacter = DataStore:GetCharacter()
 
@@ -69,26 +83,44 @@ local function UpdateSavedBosses()
 	lockouts.ThisCharacter.lastUpdate = time()
 end
 
+local instanceIDByName = setmetatable({}, {
+	__index = function(self, instanceName)
+		local instanceID = nil
+		if instanceID then
+			self[instanceName] = instanceID
+			return instanceID
+		end
+	end
+})
 local function UpdateSavedInstances()
 	local instances = lockouts.ThisCharacter.Instances
 	wipe(instances)
+	local instanceLinks = lockouts.ThisCharacter.InstanceLinks
+	wipe(instanceLinks)
 
+	-- TODO: what kind of data do we even want to store?
 	for index = 1, GetNumSavedInstances() do
-		local instanceName, instanceID, instanceReset, difficulty, locked, extended, instanceIDMostSig, isRaid, maxPlayers, difficultyName, numBosses, numDefeatedBosses = GetSavedInstanceInfo(index)
+		local lockout = GetSavedInstanceChatLink(index)
+		-- local guid, instanceID, difficulty, defeatedBosses = lockout:match('instancelock:([^:]+):([^:]+):([^:])+:([^:]+)')
+		--      instanceID, defeatedBosses = tonumber(instanceID), tonumber(defeatedBosses)
+		-- * defeatedBosses is a bitmap, but boss order differs from instance encounter order
+		-- * instanceID is unique, but not found anywhere else ingame, especially not in EJ
+		-- * instanceName does not match that of the EJ either
 
-		local numEncounters, numCompleted = GetLFGDungeonNumEncounters(instanceID)
-		if numCompleted > 0 then -- we'll also track expired ids
-			local killedBosses = 0
-			for encounterIndex = 1, numEncounters do
-				local bossName, texture, isKilled = GetLFGDungeonEncounterInfo(instanceID, encounterIndex)
-				if isKilled then
-					killedBosses = bit.bor(killedBosses, 2^(encounterIndex-1))
-				end
-			end
+		local instanceName, lockoutID, resetsIn, difficulty, locked, extended, instanceIDMostSig, isRaid, maxPlayers, difficultyName, numBosses, numDefeatedBosses = GetSavedInstanceInfo(index)
+		local reset = (locked and resetsIn > 0) and (resetsIn + time()) or 0
+		-- local identifier = string.format("%x%x", instanceIDMostSig, lockoutID) -- used in RaidFrame
 
-			local instanceKey      = strjoin('|', instanceID, difficulty)
-			instances[instanceKey] = strjoin('|', locked and (instanceReset + time()) or 0, extended, isRaid, killedBosses)
+		local killedBosses = 0
+		for encounterIndex = 1, numBosses do
+			local _, _, defeated = GetSavedInstanceEncounterInfo(index, encounterIndex)
+			killedBosses = bit.bor(killedBosses, defeated and 2^(encounterIndex-1) or 0)
 		end
+		-- marker so we know how many bosses there are
+		killedBosses = bit.bor(killedBosses, 2^numBosses)
+
+		instances[lockoutID] = strjoin('|', instanceName, difficulty, reset, extended and 1 or 0, isRaid and 1 or 0, killedBosses)
+		instanceLinks[lockoutID] = lockout
 	end
 	lockouts.ThisCharacter.lastUpdate = time()
 end
@@ -115,7 +147,7 @@ function lockouts.GetLFGInfo(character, dungeonID)
 	return status, tonumber(reset), tonumber(numDefeated)
 end
 
-function lockouts.GetLFGs(character)
+function lockouts.IterateLFGs(character)
 	local lastKey = nil
 	return function()
 		local dungeonID, info = next(character.LFGs, lastKey)
@@ -139,11 +171,11 @@ function lockouts.IsWorldBossKilledBy(character, bossID)
 	return expires
 end
 
--- Insstance Lockouts
+-- Instance Lockouts
 function lockouts.GetNumInstanceLockouts(character)
 	local total, locked = 0, 0
-	for instanceKey, instanceData in pairs(character.Instances) do
-		local instanceReset = strsplit('|', instanceData)
+	for lockoutID, lockoutData in pairs(character.Instances) do
+		local _, _, instanceReset = strsplit('|', lockoutData)
 		if instanceReset == '0' then
 			locked = locked + 1
 		end
@@ -153,51 +185,58 @@ function lockouts.GetNumInstanceLockouts(character)
 end
 
 local sortTable = {}
-function lockouts.IterateInstanceLockouts(character, sorted)
-	wipe(sortTable)
-	for instanceKey in pairs(character.Instances) do
-		table.insert(sortTable, instanceKey)
-	end
-	table.sort(sortTable)
-
-	local index = 1
+function lockouts.IterateInstanceLockouts(character)
+	local lockoutID = nil
 	return function()
-		instanceKey = sortTable[index]
-		index = index + 1
-		if instanceKey then
-			local instanceID, difficulty = strsplit('|', instanceKey)
-			return tonumber(instanceID), tonumber(difficulty)
-		end
+		local lockoutLink
+		lockoutID, lockoutLink = next(character.InstanceLinks, lockoutID)
+		return lockoutID, lockoutLink
 	end
 end
 
-function lockouts.GetInstanceLockoutInfo(character, instance, difficulty)
-	if not instance or not difficulty then return end
-	local instanceInfo = character.Instances[strjoin('|', instance, difficulty)]
-	if not instanceInfo then return end
-
-	local instanceReset, extended, isRaid = strsplit('|', instanceInfo)
-	local killedBosses = lockouts.GetNumDefeatedEncounters(character, instance, difficulty)
-	-- local resetsIn = instanceReset > 0 and (instanceReset - time()) or 0
-
-	return tonumber(instanceReset), extended == '1', isRaid == '1', tonumber(killedBosses)
+function lockouts.GetInstanceLockoutLink(character, lockoutID)
+	return lockoutID and character.InstanceLinks[lockoutID]
 end
+function lockouts.GetInstanceLockoutInfo(character, lockoutID)
+	local lockoutData = lockoutID and character.Instances[lockoutID]
+	if not lockoutData then return end
 
-function lockouts.GetNumDefeatedEncounters(character, instance, difficulty)
-	if not instance or not difficulty then return end
-	local _, _, _, killedBosses = lockouts.GetInstanceLockoutInfo(character, instance, difficulty)
-	local numKilled = 0
-	while killedBosses > 0 do
-		numKilled = numKilled + (killedBosses%2)
-		killedBosses = bit.rshift(killedBosses, 1)
+	local instanceName, difficulty, instanceReset, extended, isRaid, defeatedBosses = strsplit('|', lockoutData)
+	local defeatedBosses = tonumber(defeatedBosses)
+	local numDefeated, numBosses = 0, 0
+	while defeatedBosses and defeatedBosses > 1 do -- ignore marker bit
+		numDefeated = numDefeated + (defeatedBosses%2)
+		numBosses = numBosses + 1
+		defeatedBosses = bit.rshift(defeatedBosses, 1)
 	end
-	return numKilled
+
+	return instanceName, tonumber(difficulty), tonumber(instanceReset), extended == '1', isRaid == '1', numDefeated, numBosses
 end
 
-function lockouts.IsEncounterDefeated(character, instance, difficulty, encounterIndex)
-	if not instance or not difficulty or not encounterIndex then return end
-	local _, _, _, killedBosses = lockouts.GetInstanceLockoutInfo(character, instance, difficulty)
-	return bit.band(killedBosses, 2^(encounterIndex-1)) > 0
+local encounters = {}
+-- @returns <bool:encounter1Dead>, <bool:encounter2Dead>,  ...
+function lockouts.GetInstanceLockoutEncounters(character, lockoutID)
+	local lockoutData = lockoutID and character.Instances[lockoutID]
+	if not lockoutData then return end
+
+	local _, _, _, _, _, defeatedBosses = strsplit('|', lockoutData)
+	defeatedBosses = tonumber(defeatedBosses)
+
+	wipe(encounters)
+	local encounterIndex = 1
+	while defeatedBosses and defeatedBosses > 1 do -- ignore marker bit
+		encounters[encounterIndex] = defeatedBosses%2 == 1
+		encounterIndex = encounterIndex + 1
+		defeatedBosses = bit.rshift(defeatedBosses, 1)
+	end
+	return unpack(encounters)
+end
+
+function lockouts.IsEncounterDefeated(character, lockoutID, encounterIndex)
+	local lockoutData = lockoutID and character.Instances[lockoutID]
+	if not lockoutData or not encounterIndex then return end
+	local _, _, _, _, _, defeatedBosses = strsplit('|', lockoutData)
+	return bit.band(defeatedBosses, 2^(encounterIndex-1)) > 0
 end
 
 -- Weekly Quests
@@ -225,25 +264,16 @@ local PublicMethods = {
 	IterateInstanceLockouts  = lockouts.IterateInstanceLockouts,
 	GetNumInstanceLockouts   = lockouts.GetNumInstanceLockouts,
 	GetInstanceLockoutInfo   = lockouts.GetInstanceLockoutInfo,
-	GetNumDefeatedEncounters = lockouts.GetNumDefeatedEncounters,
+	GetInstanceLockoutLink   = lockouts.GetInstanceLockoutLink,
+	GetInstanceLockoutEncounters = lockouts.GetInstanceLockoutEncounters,
 	IsEncounterDefeated      = lockouts.IsEncounterDefeated,
+
 	-- Weeky Quests
 	IsWeeklyQuestCompletedBy = lockouts.IsWeeklyQuestCompletedBy, -- TODO: does not really belong here?
 }
 
 function lockouts:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
-		global = {
-			Characters = {
-				['*'] = {				-- ["Account.Realm.Name"]
-					lastUpdate = nil,
-					LFGs = {},
-					WorldBosses = {},
-					Instances = {},
-				}
-			}
-		}
-	}, true)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	for methodName in pairs(PublicMethods) do
@@ -257,8 +287,7 @@ function lockouts:OnEnable()
 		UpdateSavedBosses()
 		UpdateSavedInstances()
 	end)
-	-- UpdateSavedBosses()
-	-- UpdateSavedInstances()
+	RequestRaidInfo()
 
 	-- clear expired
 	local now = time()
