@@ -5,12 +5,24 @@ local equipment = addon:NewModule('Equipment', 'AceEvent-3.0')
 -- GLOBALS: GetNumEquipmentSets, GetEquipmentSetInfo, GetEquipmentSetInfoByName, GetEquipmentSetLocations, EquipmentManager_UnpackLocation, EquipmentManager_GetItemInfoByLocation, GetItemInfo, GetVoidItemInfo, GetContainerItemLink, GetInventoryItemLink
 -- GLOBALS: time, pairs, wipe
 
+local defaults = {
+	global = {
+		Characters = {
+			['*'] = {
+				lastUpdate = nil,
+				equipmentSets = {},
+			}
+		}
+	}
+}
+
 local SLOT_MISSING, SLOT_INVALID, SLOT_IGNORED = -1, 0, 1
 local function UpdateEquipmentSet(setName, setIcon)
 	local sets = equipment.ThisCharacter.equipmentSets
 	if not sets[setName] then
 		sets[setName] = {}
 	end
+	-- luckily equipment set names are unique
 	sets[setName].icon = setIcon or sets[setName].icon
 
 	-- local itemIDs = GetEquipmentSetItemIDs(setName)
@@ -47,7 +59,7 @@ local function UpdateEquipmentSet(setName, setIcon)
 					_, itemLink = GetItemInfo(itemID)
 				end
 			end
-			sets[setName][slotID] = itemLink
+			sets[setName][slotID] = itemLink:match('|H(.-)|h') or itemLink
 		end
 	end
 end
@@ -85,30 +97,31 @@ local function _GetEquipmentSetNames(character)
 	return setNames
 end
 
-local function _GetEquipmentSet(character, setName)
-	local set = character.equipmentSets[setName]
-	return setName, set.icon, set
-end
-
 local function _GetEquipmentSetItem(character, setName, slotID)
-	return character.equipmentSets[setName][slotID]
+	local item = character.equipmentSets[setName][slotID]
+	local _, itemLink = GetItemInfo(item)
+	return itemLink
 end
 
+local items = {}
 local function _GetEquipmentSetItems(character, setName)
-	return character.equipmentSets[setName]
+	wipe(items)
+	for slotID, item in pairs(character.equipmentSets[setName]) do
+		local _, itemLink = GetItemInfo(item)
+		items[slotID] = itemLink
+	end
+	return items
+end
+
+local function _GetEquipmentSet(character, setName)
+	if not character.equipmentSets[setName] then return end
+	local icon = character.equipmentSets[setName].icon
+	local items = _GetEquipmentSetItems(character, setName)
+	return setName, icon, items
 end
 
 function equipment:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
-		global = {
-			Characters = {
-				['*'] = {
-					lastUpdate = nil,
-					equipmentSets = {},
-				}
-			}
-		}
-	}, true)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
 	DataStore:RegisterModule(self.name, self, {
 		GetNumEquipmentSets = _GetNumEquipmentSets,
