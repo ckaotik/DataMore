@@ -50,6 +50,60 @@ local defaults = {
 
 -- Data Gathering
 -- --------------------------------------------------------
+local function IsRecipientKnown(recipient, realm)
+	if recipient and realm then recipient = strjoin('-', recipient, realm:gsub(' ', '')) end
+	local recipientName, recipientRealm = strsplit('-', recipient)
+	if not recipientRealm or recipientRealm == '' then
+		recipientRealm = playerRealm
+	end
+	recipientName, recipientRealm = recipientName:lower(), recipientRealm:lower()
+
+	local contactName = nil
+	local isFriend, isGuildMember = false, false
+	-- plain old realm contacts
+	if DataStore:GetContactInfo(thisCharacter, recipientName)
+		or DataStore:GetContactInfo(thisCharacter, recipient) then
+		isFriend = true
+		contactName = recipient
+	end
+
+	-- battle tag / realID contacts
+	local isBNetFriend
+	for friendIndex = 1, BNGetNumFriends() do
+		local focussedToon
+		for toonIndex = 1, BNGetNumFriendToons(friendIndex) do
+			local hasFocus, toonName, client, realmName, realmID, faction = BNGetFriendToonInfo(friendIndex, toonIndex)
+			if hasFocus and client == 'WoW' then
+				-- this allows us to override the whisper recipient
+				focussedToon = strjoin('-', toonName, realmName:gsub(' ', ''))
+			end
+			if client == 'WoW' then -- TODO: use constant
+				if toonName:lower() == recipientName and realmName:lower() == recipientRealm then
+					if not focussedToon then
+						focussedToon = strjoin('-', toonName, realmName:gsub(' ', ''))
+					end
+					isBNetFriend = true
+				end
+			end
+		end
+		if isBNetFriend then
+			contactName = focussedToon
+			break
+		end
+	end
+
+	-- guild members
+	local recipientName = Ambiguate(recipient, 'guild')
+	local player = DataStore:GetNameOfMain(recipientName)
+	-- FIXME: we only care about guild member using DataStore
+	if player and DataStore:IsGuildMemberOnline(player) then
+		isGuildMember = true
+		contactName = player
+	end
+
+	return contactName, isGuildMember, isFriend, isBNetFriend
+end
+
 local function GetRecipientKey(recipient, realm)
 	if recipient and realm then
 		-- yes, I'm that lazy
@@ -186,16 +240,20 @@ local function StoreForeignMail(recipientKey, mail)
 end
 
 -- takes required actions when a mail is sent (either via outbox or as a retour)
+-- TODO: also notify when recipient is a friend
 local function HandleMail(mail, recipient)
 	local recipientKey = GetRecipientKey(recipient)
 	if recipientKey then
 		-- recipient is an alt
 		StoreForeignMail(recipientKey, mail)
 	else
+		local contactName, isGuild, isFriend, isBNFriend = IsRecipientKnown(recipient)
+
 		-- might be a guild member
-		local recipientName = Ambiguate(recipient, 'guild')
-		local player = DataStore:GetNameOfMain(recipientName)
-		if player and DataStore:IsGuildMemberOnline(player) then
+		-- local recipientName = Ambiguate(recipient, 'guild')
+		-- local player = DataStore:GetNameOfMain(recipientName)
+		-- if player and DataStore:IsGuildMemberOnline(player) then
+		if isGuild then
 			NotifyGuildMail(mail, player, recipientName)
 		end
 	end
@@ -268,6 +326,12 @@ local function HandleGuildNotification(args)
 		sender = sender, -- TODO: handle realm name
 		attachments = {},
 	}
+
+	-- TODO: mails in transit ("pending") if non guild member or guild level < 17
+	-- mail.status = timeOfArrival
+	local contactName, isGuild, isFriend, isBNFriend = IsRecipientKnown(sender)
+	print('new mail from', sender, contactName, isGuild, isFriend, isBNFriend)
+
 	coroutine.yield()
 
 	-- can be triggered multiple times
@@ -297,7 +361,6 @@ end
 
 local commRoutine, commArgs = nil, {}
 local function ResumeRoutine(event, ...)
-	print('comm', event, 'args', ...)
 	wipe(commArgs)
 	for i = 1, select('#', ...) do
 		commArgs[i] = select(i, ...)
