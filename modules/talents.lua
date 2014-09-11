@@ -369,11 +369,11 @@ local PublicMethods = {
 	GetTalentSelection   = talents.GetTalentSelection,
 	GetTalentInfo        = talents.GetTalentInfo,
 
-	GetNumGlyphs     = glyphs.GetNumGlyphs,
-	GetGlyphLink     = glyphs.GetGlyphLink,
-	GetGlyphInfo     = glyphs.GetGlyphInfo,
-	GetGlyphInfoByID = glyphs.GetGlyphInfoByID,
-	IsGlyphKnown     = glyphs.IsGlyphKnown,
+	GetNumGlyphs         = glyphs.GetNumGlyphs,
+	GetGlyphLink         = glyphs.GetGlyphLink,
+	GetGlyphInfo         = glyphs.GetGlyphInfo,
+	GetGlyphInfoByID     = glyphs.GetGlyphInfoByID,
+	IsGlyphKnown         = glyphs.IsGlyphKnown,
 }
 
 function talents:OnInitialize()
