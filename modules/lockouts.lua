@@ -24,13 +24,11 @@ local thisCharacter = DataStore:GetCharacter()
 -- *** Scanning functions ***
 local LFGInfos = {
 	-- GetNumX(), GetXInfo(index) returning same data as GetLFGDungeonInfo(dungeonID)
-	GetNumRandomDungeons, GetLFGRandomDungeonInfo,
-	GetNumRFDungeons, GetRFDungeonInfo,
-	GetNumRandomScenarios, GetRandomScenarioInfo,
-	GetNumFlexRaidDungeons, GetFlexRaidDungeonInfo
+	{ GetNumRandomDungeons, GetLFGRandomDungeonInfo },
+	{ GetNumRandomScenarios, GetRandomScenarioInfo },
+	{ GetNumRFDungeons, GetRFDungeonInfo },
+	{ GetNumFlexRaidDungeons, GetFlexRaidDungeonInfo },
 }
--- TYPEID_DUNGEON, TYPEID_RANDOM_DUNGEON
--- LFG_SUBTYPEID_DUNGEON, LFG_SUBTYPEID_HEROIC, LFG_SUBTYPEID_RAID, LFG_SUBTYPEID_SCENARIO
 
 local function UpdateLFGStatus()
 	-- TODO: group data by dungeon?
@@ -38,12 +36,12 @@ local function UpdateLFGStatus()
 
 	local lfgs = lockouts.ThisCharacter.LFGs
 	wipe(lfgs)
-	for i = 1, #LFGInfos, 2 do
-		local getNum, getInfo = LFGInfos[i], LFGInfos[i+1]
+	for i, funcs in pairs(LFGInfos) do
+		local getNum, getInfo = funcs[1], funcs[2]
 		for index = 1, getNum() do
 			local dungeonID, _, _, _, minLevel, maxLevel, _, _, _, expansionLevel = getInfo(index)
 			local _, _, completed, available, _, _, _, _, _, _, isWeekly = GetLFGDungeonRewardCapInfo(dungeonID)
-			local _, numDefeated = GetLFGDungeonNumEncounters(dungeonID)
+			local numBosses, numDefeated = GetLFGDungeonNumEncounters(dungeonID)
 			local doneToday = GetLFGDungeonRewards(dungeonID)
 
 			local status = completed
@@ -61,12 +59,21 @@ local function UpdateLFGStatus()
 
 			if status == 0 and dungeonReset == 0 and numDefeated == 0 then
 				-- dungeon available but no lockout
-				lfgs[dungeonID] = 0
+				-- lfgs[dungeonID] = 0
 			elseif status ~= 0 and status ~= 1 then
-				-- dungeon not available, story only the reason
-				lfgs[dungeonID] = status
+				-- dungeon not available, store only the reason
+				lfgs[dungeonID] = tonumber(status) or status
 			else
-				lfgs[dungeonID] = string.format('%s|%d|%d', status, dungeonReset, numDefeated)
+				-- dungeon has lockout info
+				local defeatedBosses = 0
+				for encounterIndex = 1, numBosses do
+					local _, _, defeated = GetLFGDungeonEncounterInfo(dungeonID, encounterIndex)
+					defeatedBosses = bit.bor(defeatedBosses, defeated and 2^(encounterIndex-1) or 0)
+				end
+				-- marker so we know how many bosses there are
+				defeatedBosses = bit.bor(defeatedBosses, 2^numBosses)
+
+				lfgs[dungeonID] = string.format('%s|%d|%d', status, dungeonReset, defeatedBosses)
 			end
 		end
 	end
@@ -83,15 +90,6 @@ local function UpdateSavedBosses()
 	lockouts.ThisCharacter.lastUpdate = time()
 end
 
-local instanceIDByName = setmetatable({}, {
-	__index = function(self, instanceName)
-		local instanceID = nil
-		if instanceID then
-			self[instanceName] = instanceID
-			return instanceID
-		end
-	end
-})
 local function UpdateSavedInstances()
 	local instances = lockouts.ThisCharacter.Instances
 	wipe(instances)
@@ -104,7 +102,7 @@ local function UpdateSavedInstances()
 		-- local guid, instanceID, difficulty, defeatedBosses = lockout:match('instancelock:([^:]+):([^:]+):([^:])+:([^:]+)')
 		--      instanceID, defeatedBosses = tonumber(instanceID), tonumber(defeatedBosses)
 		-- * defeatedBosses is a bitmap, but boss order differs from instance encounter order
-		-- * instanceID is unique, but not found anywhere else ingame, especially not in EJ
+		-- * instanceID is unique, but not found anywhere else ingame, especially not in EJ/API
 		-- * instanceName does not match that of the EJ either
 
 		local instanceName, lockoutID, resetsIn, difficulty, locked, extended, instanceIDMostSig, isRaid, maxPlayers, difficultyName, numBosses, numDefeatedBosses = GetSavedInstanceInfo(index)
@@ -125,14 +123,54 @@ local function UpdateSavedInstances()
 	lockouts.ThisCharacter.lastUpdate = time()
 end
 
+local encounters = {}
+-- @returns <bool:encounter1Dead>, <bool:encounter2Dead>,  ...
+local function GetEncounters(defeatedBosses)
+	wipe(encounters)
+	local encounterIndex = 1
+	while defeatedBosses and defeatedBosses > 1 do -- ignore marker bit
+		encounters[encounterIndex] = defeatedBosses%2 == 1
+		encounterIndex = encounterIndex + 1
+		defeatedBosses = bit.rshift(defeatedBosses, 1)
+	end
+	return unpack(encounters)
+end
+
 -- Mixins
 -- Looking for Group
-function lockouts.GetLFGInfo(character, dungeonID)
-	local instanceInfo = character.LFGs[dungeonID]
-	if not instanceInfo then return end
+function lockouts.IterateLFGs(character, typeID, subTypeID)
+	local lfgIndex, lfgType = 0, next(LFGInfos, nil)
+	return function()
+		while true do
+			lfgIndex = lfgIndex + 1
+			if not lfgType or not LFGInfos[lfgType] then
+				-- invalid lfgType
+				return nil
+			end
+			local instanceID, instanceName, instanceType, instanceSubType = LFGInfos[lfgType][2](lfgIndex)
+			if not instanceID then
+				-- no more instances in this group, try next one
+				lfgType  = next(LFGInfos, lfgType)
+				lfgIndex = 0
+			elseif (typeID and typeID ~= instanceType) or (subTypeID and subTypeID ~= instanceSubType) then
+				-- instance does not math specified types
+				lfgIndex = lfgIndex + 1
+			else
+				-- found a match!
+				return instanceID, instanceName, lockouts.GetLFGInfo(character, instanceID)
+			end
+		end
+	end
+end
 
-	local status, reset, numDefeated = strsplit('|', instanceInfo)
-	local lockedReason, subReason1, subReason2 = strsplit(':', status)
+function lockouts.GetLFGInfo(character, instanceID)
+	local instanceInfo = character.LFGs[instanceID]
+	if not instanceInfo then return end
+	instanceInfo = tostring(instanceInfo)
+
+	local status, reset, defeatedBosses = strsplit('|', instanceInfo)
+	      defeatedBosses = tonumber(defeatedBosses or '') or 0
+	local lockedReason, subReason1, subReason2 = strsplit(':', status or '')
 	      lockedReason = tonumber(lockedReason) or nil
 
 	if lockedReason == 0 or lockedReason == 1 then
@@ -144,17 +182,24 @@ function lockouts.GetLFGInfo(character, dungeonID)
 		status = string.format(reasonText, subReason1, subReason2)
 	end
 
-	return status, tonumber(reset), tonumber(numDefeated)
+	local numDefeated, numBosses = 0, 0
+	while defeatedBosses and defeatedBosses > 1 do -- ignore marker bit
+		numDefeated = numDefeated + (defeatedBosses%2)
+		numBosses = numBosses + 1
+		defeatedBosses = bit.rshift(defeatedBosses, 1)
+	end
+
+	return status, tonumber(reset), numDefeated, numBosses
 end
 
-function lockouts.IterateLFGs(character)
-	local lastKey = nil
-	return function()
-		local dungeonID, info = next(character.LFGs, lastKey)
-		lastKey = dungeonID
+function lockouts.GetLFGEncounters(character, instanceID)
+	local instanceInfo = character.LFGs[instanceID]
+	if not instanceInfo then return end
+	instanceInfo = tostring(instanceInfo)
 
-		return dungeonID, lockouts.GetLFGInfo(character, dungeonID)
-	end
+	local _, _, defeatedBosses = strsplit('|', instanceInfo)
+	            defeatedBosses = tonumber(defeatedBosses or '') or 0
+	return GetEncounters(defeatedBosses)
 end
 
 -- World Bosses
@@ -213,23 +258,13 @@ function lockouts.GetInstanceLockoutInfo(character, lockoutID)
 	return instanceName, tonumber(difficulty), tonumber(instanceReset), extended == '1', isRaid == '1', numDefeated, numBosses
 end
 
-local encounters = {}
--- @returns <bool:encounter1Dead>, <bool:encounter2Dead>,  ...
 function lockouts.GetInstanceLockoutEncounters(character, lockoutID)
 	local lockoutData = lockoutID and character.Instances[lockoutID]
 	if not lockoutData then return end
 
 	local _, _, _, _, _, defeatedBosses = strsplit('|', lockoutData)
-	defeatedBosses = tonumber(defeatedBosses)
-
-	wipe(encounters)
-	local encounterIndex = 1
-	while defeatedBosses and defeatedBosses > 1 do -- ignore marker bit
-		encounters[encounterIndex] = defeatedBosses%2 == 1
-		encounterIndex = encounterIndex + 1
-		defeatedBosses = bit.rshift(defeatedBosses, 1)
-	end
-	return unpack(encounters)
+	                     defeatedBosses = tonumber(defeatedBosses)
+	return GetEncounters(defeatedBosses)
 end
 
 function lockouts.IsEncounterDefeated(character, lockoutID, encounterIndex)
@@ -254,8 +289,9 @@ end
 -- setup
 local PublicMethods = {
 	-- Looking for Group
-	GetLFGs                  = lockouts.GetLFGs,
+	IterateLFGs              = lockouts.IterateLFGs,
 	GetLFGInfo               = lockouts.GetLFGInfo,
+	GetLFGEncounters         = lockouts.GetLFGEncounters,
 	-- World Bosses
 	GetSavedWorldBosses      = lockouts.GetSavedWorldBosses,
 	GetNumSavedWorldBosses   = lockouts.GetNumSavedWorldBosses,
@@ -289,6 +325,7 @@ function lockouts:OnEnable()
 	end)
 	RequestRaidInfo()
 
+	-- TODO: apply to instance lockous as well
 	-- clear expired
 	local now = time()
 	for characterKey, character in pairs(self.db.global.Characters) do
@@ -300,6 +337,14 @@ function lockouts:OnEnable()
 			elseif reset and reset ~= 0 and reset < now then
 				-- had lockout, lockout expired, LFG is available
 				character.LFGs[dungeonID] = 0
+			end
+		end
+		for lockoutID, lockoutData in pairs(character.Instances) do
+			-- instances[lockoutID] =
+			local a, b, reset, d, e, f = strsplit('|', lockoutData)
+			            reset = tonumber(reset)
+			if reset and reset ~= 0 and reset < now then
+				character.Instances[lockoutID] = strjoin('|', a, b, 0, d, e, f)
 			end
 		end
 	end
