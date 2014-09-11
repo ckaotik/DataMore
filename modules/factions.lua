@@ -163,6 +163,44 @@ local PublicMethods = {
 	GetFactionInfo        = factions.GetFactionInfo,
 }
 
+-- legacy compatibility with DataStore_Reputations
+if not IsAddOnLoaded('DataStore_Reputations') then
+	local function _GetReputationInfo(character, factionName)
+		-- "Revered", 15400, 21000, 73%
+		local _, reputation, _, standingText, low, high = factions.GetFactionInfoByName(character, factionName)
+		return standingText, (reputation - low), (high - low), (reputation - low) / (high - low) * 100
+	end
+	local function _GetRawReputationInfo(character, factionName)
+		-- 15400, 21000, 16789
+		local _, reputation, _, _, low, high = factions.GetFactionInfoByName(character, factionName)
+		return low, high, reputation
+	end
+	local function _GetGuildReputation(character)
+		return select(2, factions.GetFactionInfoGuild(character))
+	end
+	local function _GetReputationLevels()
+		return reputationStandings
+	end
+	local function _GetReputationLevelText(reputation)
+		return factions.GetReputationStanding(reputation)
+	end
+	local DSRepFactions = {}
+	local function _GetReputations(character)
+		wipe(DSRepFactions)
+		for factionID, reputation in pairs(character.reputations) do
+			DSRepFactions[factionID] = reputation
+		end
+		return DSRepFactions
+	end
+
+	PublicMethods.GetReputationInfo      = _GetReputationInfo
+	PublicMethods.GetRawReputationInfo   = _GetRawReputationInfo
+	PublicMethods.GetReputations         = _GetReputations
+	PublicMethods.GetGuildReputation     = _GetGuildReputation
+	PublicMethods.GetReputationLevels    = _GetReputationLevels
+	PublicMethods.GetReputationLevelText = _GetReputationLevelText
+end
+
 function factions:OnInitialize()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
 		global = {
@@ -176,12 +214,18 @@ function factions:OnInitialize()
 		}
 	}, true)
 
-	DataStore:RegisterModule(self.name, self, PublicMethods)
+	DataStore:RegisterModule(self.name, self, PublicMethods, true)
 	DataStore:SetCharacterBasedMethod('GetNumFactions')
 	DataStore:SetCharacterBasedMethod('GetFactionInfoGuild')
 	DataStore:SetCharacterBasedMethod('GetFactionInfoByName')
 	DataStore:SetCharacterBasedMethod('GetFactionInfoByID')
 	DataStore:SetCharacterBasedMethod('GetFactionInfo')
+	if PublicMethods.GetReputationInfo then
+		DataStore:SetCharacterBasedMethod('GetReputationInfo')
+		DataStore:SetCharacterBasedMethod('GetRawReputationInfo')
+		DataStore:SetCharacterBasedMethod('GetReputations')
+		DataStore:SetCharacterBasedMethod('GetGuildReputation')
+	end
 end
 
 function factions:OnEnable()
