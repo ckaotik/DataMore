@@ -96,7 +96,6 @@ local function UpdateSavedInstances()
 	local instanceLinks = lockouts.ThisCharacter.InstanceLinks
 	wipe(instanceLinks)
 
-	-- TODO: what kind of data do we even want to store?
 	for index = 1, GetNumSavedInstances() do
 		local lockout = GetSavedInstanceChatLink(index)
 		-- local guid, instanceID, difficulty, defeatedBosses = lockout:match('instancelock:([^:]+):([^:]+):([^:])+:([^:]+)')
