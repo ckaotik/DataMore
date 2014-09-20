@@ -73,11 +73,11 @@ local function IsRecipientKnown(recipient, realm)
 		local focussedToon
 		for toonIndex = 1, BNGetNumFriendToons(friendIndex) do
 			local hasFocus, toonName, client, realmName, realmID, faction = BNGetFriendToonInfo(friendIndex, toonIndex)
-			if hasFocus and client == 'WoW' then
+			if hasFocus and client == _G.BNET_CLIENT_WOW then
 				-- this allows us to override the whisper recipient
 				focussedToon = strjoin('-', toonName, realmName:gsub(' ', ''))
 			end
-			if client == 'WoW' then -- TODO: use constant
+			if client == _G.BNET_CLIENT_WOW then
 				if toonName:lower() == recipientName and realmName:lower() == recipientRealm then
 					if not focussedToon then
 						focussedToon = strjoin('-', toonName, realmName:gsub(' ', ''))
@@ -95,7 +95,7 @@ local function IsRecipientKnown(recipient, realm)
 	-- guild members
 	local recipientName = Ambiguate(recipient, 'guild')
 	local player = DataStore:GetNameOfMain(recipientName)
-	-- FIXME: we only care about guild member using DataStore
+	-- TODO: FIXME: we only care about guild member using DataStore
 	if player and DataStore:IsGuildMemberOnline(player) then
 		isGuildMember = true
 		contactName = player
