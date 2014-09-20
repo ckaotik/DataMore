@@ -95,7 +95,8 @@ local function _GetQuestProgressPercentage(character, questID)
 
 	if data[0] then
 		-- money required
-		local characterMoney = DataStore:GetMoney(character.key)
+		local characterKey = DataStore:GetCurrentCharacterKey()
+		local characterMoney = DataStore:GetMoney(characterKey)
 		current = current + math.min(characterMoney, data[0])
 		max     = max     + data[0]
 	end
