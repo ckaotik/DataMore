@@ -15,6 +15,14 @@ local AddonDB_Defaults = {
 		Characters = {
 			['*'] = { -- character key, e.g. "Account.Realm.Name"
 				lastUpdate = nil,
+				--[[
+				activeSpecGroup = nil, -- specialization index
+				group1Spec = nil,      -- specialization ID
+				group1Talents = {},    -- [tierX] = talentID / 0 (unspent) / null (not yet unlocked)
+				group2Spec = nil,
+				group2Talents = {},
+				--]]
+
 				active = nil,
 				specs = '',
 				talents1 = '',
@@ -27,7 +35,14 @@ local AddonDB_Defaults = {
 		Glyphs = {
 			['*'] = {}, -- class, e.g. "DRUID"
 		},
-	}
+	},
+	--[[
+	-- char, realm, class, faction, factionrealm, profile
+	class = {
+		glyphs = {
+			-- [glyphID] = "glyphIndex|glyphType|glyphID|icon|description"
+		},
+	}, --]]
 }
 
 -- == Talent Scanning =====================================
@@ -369,11 +384,11 @@ local PublicMethods = {
 	GetTalentSelection   = talents.GetTalentSelection,
 	GetTalentInfo        = talents.GetTalentInfo,
 
-	GetNumGlyphs         = glyphs.GetNumGlyphs,
-	GetGlyphLink         = glyphs.GetGlyphLink,
-	GetGlyphInfo         = glyphs.GetGlyphInfo,
-	GetGlyphInfoByID     = glyphs.GetGlyphInfoByID,
-	IsGlyphKnown         = glyphs.IsGlyphKnown,
+	-- GetNumGlyphs         = glyphs.GetNumGlyphs,
+	-- GetGlyphLink         = glyphs.GetGlyphLink,
+	-- GetGlyphInfo         = glyphs.GetGlyphInfo,
+	-- GetGlyphInfoByID     = glyphs.GetGlyphInfoByID,
+	-- IsGlyphKnown         = glyphs.IsGlyphKnown,
 }
 
 function talents:OnInitialize()
@@ -407,7 +422,7 @@ function talents:OnEnable()
 	local initialized
 	self:RegisterEvent('PLAYER_LOGIN', function(...)
 		ScanTalents()
-		if not initialized then
+		if false and not initialized then
 			ScanGlyphs()
 			ScanGlyphList()
 			initialized = true
@@ -415,18 +430,18 @@ function talents:OnEnable()
 	end)
 	self:RegisterEvent('PLAYER_TALENT_UPDATE', ScanTalents)
 
-	self:RegisterEvent('GLYPH_ADDED', ScanGlyphs)
-	self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
-	self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
-	self:RegisterEvent('USE_GLYPH', ScanGlyphList)
+	-- self:RegisterEvent('GLYPH_ADDED', ScanGlyphs)
+	-- self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
+	-- self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
+	-- self:RegisterEvent('USE_GLYPH', ScanGlyphList)
 end
 
 function talents:OnDisable()
 	self:UnregisterEvent('PLAYER_LOGIN')
 	self:UnregisterEvent('PLAYER_TALENT_UPDATE')
 
-	self:UnregisterEvent('GLYPH_ADDED')
-	self:UnregisterEvent('GLYPH_REMOVED')
-	self:UnregisterEvent('GLYPH_UPDATED')
-	self:UnregisterEvent('USE_GLYPH')
+	-- self:UnregisterEvent('GLYPH_ADDED')
+	-- self:UnregisterEvent('GLYPH_REMOVED')
+	-- self:UnregisterEvent('GLYPH_UPDATED')
+	-- self:UnregisterEvent('USE_GLYPH')
 end
