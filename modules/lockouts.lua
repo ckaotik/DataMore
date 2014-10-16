@@ -41,28 +41,24 @@ local function UpdateLFGStatus()
 		for index = 1, getNum() do
 			local dungeonID, _, _, _, minLevel, maxLevel, _, _, _, expansionLevel = getInfo(index)
 			local _, _, completed, available, _, _, _, _, _, _, isWeekly = GetLFGDungeonRewardCapInfo(dungeonID)
+			local isAvailable, isAvailableToPlayer, hideUnavailable = IsLFGDungeonJoinable(dungeonID)
 			local numBosses, numDefeated = GetLFGDungeonNumEncounters(dungeonID)
 			local doneToday = GetLFGDungeonRewards(dungeonID)
-
-			local status = completed
-			if available ~= 1 or EXPANSION_LEVEL < expansionLevel or playerLevel < minLevel or playerLevel > maxLevel then
-				-- not available
-				local _, reason, info1, info2 = GetLFDLockInfo(dungeonID, 1)
-				status = string.format('%s:%s:%s', reason or '', info1 or '', info2 or '')
-				status = strtrim(status, ':') -- trim trailing ::
-			end
 
 			local dungeonReset = 0
 			if available == 1 and (numDefeated > 0 or doneToday) then
 				dungeonReset = isWeekly and addon.GetNextMaintenance() or (time() + GetQuestResetTime())
 			end
 
-			if status == 0 and dungeonReset == 0 and numDefeated == 0 then
+			if not isAvailable and not isAvailableToPlayer or available ~= 1 then
+				-- dungeon not available
+				local _, reason, info1, info2 = GetLFDLockInfo(dungeonID, 1)
+				local status = string.format('%s:%s:%s', reason or '', info1 or '', info2 or '')
+				      status = strtrim(status, ':') -- trim trailing ::
+				lfgs[dungeonID] = tonumber(status) or status
+			elseif completed == 0 and dungeonReset == 0 and numDefeated == 0 then
 				-- dungeon available but no lockout
 				-- lfgs[dungeonID] = 0
-			elseif status ~= 0 and status ~= 1 then
-				-- dungeon not available, store only the reason
-				lfgs[dungeonID] = tonumber(status) or status
 			else
 				-- dungeon has lockout info
 				local defeatedBosses = 0
@@ -73,7 +69,7 @@ local function UpdateLFGStatus()
 				-- marker so we know how many bosses there are
 				defeatedBosses = bit.bor(defeatedBosses, 2^numBosses)
 
-				lfgs[dungeonID] = string.format('%s|%d|%d', status, dungeonReset, defeatedBosses)
+				lfgs[dungeonID] = string.format('%s|%d|%d', completed, dungeonReset, defeatedBosses)
 			end
 		end
 	end
@@ -162,23 +158,30 @@ function lockouts.IterateLFGs(character, typeID, subTypeID)
 	end
 end
 
+-- @return <bool:available|string:lockedReason>, <int:resetTime|nil>, <int:numDefeated|nil>, <int:numBosses|nil>
 function lockouts.GetLFGInfo(character, instanceID)
 	local instanceInfo = character.LFGs[instanceID]
 	if not instanceInfo then return end
-	instanceInfo = tostring(instanceInfo)
+
+	local lockCode = tonumber(instanceInfo)
+	if lockCode then
+		-- simple locked status code, easily mixed up with <completed> flag
+		instanceInfo = lockCode..'::'
+	end
 
 	local status, reset, defeatedBosses = strsplit('|', instanceInfo)
 	      defeatedBosses = tonumber(defeatedBosses or '') or 0
-	local lockedReason, subReason1, subReason2 = strsplit(':', status or '')
+	local lockedReason, arg1, arg2 = strsplit(':', status or '')
 	      lockedReason = tonumber(lockedReason) or nil
 
-	if lockedReason == 0 or lockedReason == 1 then
+	if not arg1 and not arg2 then
+		-- dungeon was completed
 		status = lockedReason == 1 and true or false
 	elseif lockedReason == 1029 or lockedReason == 1030 or lockedReason == 1031 then
 		status = _G['INSTANCE_UNAVAILABLE_OTHER_TOO_SOON']
 	else
 		local reasonText = _G['INSTANCE_UNAVAILABLE_SELF_'..(LFG_INSTANCE_INVALID_CODES[lockedReason] or 'OTHER')]
-		status = string.format(reasonText, subReason1, subReason2)
+		status = string.format(reasonText, arg1, arg2)
 	end
 
 	local numDefeated, numBosses = 0, 0
