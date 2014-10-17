@@ -12,6 +12,9 @@ local AddonDB_Defaults = {
 			['*'] = {				-- ["Account.Realm.Name"]
 				lastUpdate = nil,
 				QuestProgress = {},
+				-- QuestLog = {},
+				-- QuestLinks = {},
+				-- QuestRewards = {}, -- itemLink, type (choice/item/spell/talent), amount
 			}
 		}
 	}
@@ -111,9 +114,11 @@ end
 local function UpdateQuestProgress()
 	local questProgress = quests.ThisCharacter.QuestProgress
 	wipe(questProgress)
+	-- local questLog = quests.ThisCharacter.QuestLog
+	-- wipe(questLog)
 
 	for questIndex = 1, (GetNumQuestLogEntries()) do
-		local title, level, questTag, suggestedGroup, isHeader, isCollapsed, isComplete, isDaily, questID, startEvent, displayQuestID = GetQuestLogTitle(questIndex)
+		local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(questIndex)
 
 		-- print('scanning', questIndex, GetQuestLogTitle(questIndex))
 		-- /spew DataMore_Quests.ThisCharacter.QuestProgress[29433]
