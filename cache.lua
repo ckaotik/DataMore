@@ -88,13 +88,13 @@ function Cache:DeletePlayer(realm, player)
 	-- we don't delete players
 end
 
-local characters, realms = {}, nil
+local characters, realms, emptyTable = {}, nil, {}
 function Cache:GetPlayers(realm)
 	wipe(characters)
-	realms = realms or GetAutoCompleteRealms(realms)
+	realms = realms or GetAutoCompleteRealms()
 	for account in pairs(DataStore:GetAccounts()) do
 		for realmName in pairs(DataStore:GetRealms(account)) do
-			if realmName == realm or (realms and tContains(realms, realmName:gsub(' ', ''))) then
+			if realmName == realm or tContains(realms or emptyTable, realmName:gsub(' ', '')) then
 				for character in pairs(DataStore:GetCharacters(realmName, account)) do
 					table.insert(characters, character)
 				end
