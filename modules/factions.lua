@@ -10,7 +10,6 @@ local factions = addon:NewModule('Factions', 'AceEvent-3.0')
 	GetFriendshipReputation(factionID) returns friendID, friendRep, friendMaxRep, friendName, friendText, friendTexture, friendTextLevel, friendThreshold, nextFriendThreshold
 --]]
 
-local thisCharacter = DataStore:GetCharacter()
 local FACTION_INACTIVE = -1
 
 local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000, 43000 }
