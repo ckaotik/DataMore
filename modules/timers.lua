@@ -30,7 +30,6 @@ local function GlobalStringToPattern(str)
 	result = result:gsub('([%(%)])', '%%%1'):gsub('%%%d?$?c', '(.+)'):gsub('%%%d?$?s', '(.+)'):gsub('%%%d?$?d', '(%%d+)')
 	return result
 end
-
 local DAY, DAYHOUR, HOUR, HOURMIN, MIN, SEC =
 	GlobalStringToPattern(_G.GARRISON_DURATION_DAYS),
 	GlobalStringToPattern(_G.GARRISON_DURATION_DAYS_HOURS),
@@ -38,6 +37,23 @@ local DAY, DAYHOUR, HOUR, HOURMIN, MIN, SEC =
 	GlobalStringToPattern(_G.GARRISON_DURATION_HOURS_MINUTES),
 	GlobalStringToPattern(_G.GARRISON_DURATION_MINUTES),
 	GlobalStringToPattern(_G.GARRISON_DURATION_SECONDS)
+local function ParseTimeString(timeString)
+	local seconds = timeString:match('^'..SEC..'$')
+	if not seconds then
+		local hours, minutes = timeString:match('^'..HOURMIN..'$')
+		if not hours then hours = timeString:match('^'..HOUR..'$') end
+		if not hours then minutes = timeString:match('^'..MIN..'$') end
+		if hours or minutes then
+			seconds = 60*60 * (hours or 0) + 60 * (minutes or 0)
+		else
+			local days, hours = timeString:match('^'..DAYHOUR..'$')
+			if not days then days = timeString:match('^'..DAY..'$') end
+			seconds = 60*60*24 * (days or 0) + 60*60 * (hours or 0)
+		end
+	end
+	return seconds
+end
+
 local function ScanGarrisonStatus()
 	local character = timers.ThisCharacter
 
@@ -59,26 +75,45 @@ local function ScanGarrisonStatus()
 		end
 	end
 
-	wipe(character.Garrison.Missions)
+	-- TODO: rewrite to store correct timestamp
+	-- [[
+	local missions = character.Garrison.Missions
+	local now = time()
+	-- flag old missions
+	for missionID, expires in pairs(missions) do
+		missions[missionID] = expires > now and -1 * expires or nil
+	end
+	-- now update/add currently active missions
+	for index, mission in ipairs(C_Garrison.GetInProgressMissions()) do
+		if missions[mission.missionID] then
+			-- mission is known, remove flag but don't touch expiry
+			missions[mission.missionID] = -1 * missions[mission.missionID]
+		else
+			-- new mission
+			local seconds = ParseTimeString(mission.timeLeft)
+			if seconds and seconds/mission.durationSeconds >= 0.95 then
+				-- mission was just accepted
+				missions[mission.missionID] = now + mission.durationSeconds
+			else
+				-- mission was accepted while addon was not present
+				missions[mission.missionID] = now + seconds
+			end
+		end
+	end
+	-- remove expired missions
+	for missionID, expires in pairs(missions) do
+		if expires < 0 then
+			missions[missionID] = nil
+		end
+	end
+	--]]
+	--[[ wipe(character.Garrison.Missions)
 	-- Note: get info on missions using C_Garrison.GetBasicMissionInfo(missionID)
 	for index, mission in ipairs(C_Garrison.GetInProgressMissions()) do
 		-- missions
 		-- this sucks but we don't have seconds remaining :(
-		local seconds = mission.timeLeft:match('^'..SEC..'$')
-		if not seconds then
-			local hours, minutes = mission.timeLeft:match('^'..HOURMIN..'$')
-			if not hours then hours = mission.timeLeft:match('^'..HOUR..'$') end
-			if not hours then minutes = mission.timeLeft:match('^'..MIN..'$') end
-			if hours or minutes then
-				seconds = 60*60 * (hours or 0) + 60 * (minutes or 0)
-			else
-				local days, hours = mission.timeLeft:match('^'..DAYHOUR..'$')
-				if not days then days = mission.timeLeft:match('^'..DAY..'$') end
-				seconds = 60*60*24 * (days or 0) + 60*60 * (hours or 0)
-			end
-		end
-		character.Garrison.Missions[mission.missionID] = time() + (seconds or 0)
-	end
+		character.Garrison.Missions[mission.missionID] = time() + ParseTimeString(mission.timeLeft) or 0
+	end --]]
 	timers.ThisCharacter.lastUpdate = time()
 end
 
@@ -158,6 +193,7 @@ function timers:OnEnable()
 	hooksecurefunc(C_Garrison, 'RequestLandingPageShipmentInfo', ScanGarrisonStatus)
 	C_Garrison.RequestLandingPageShipmentInfo() -- will also trigger a scan
 	-- TODO: there is currently no way to notice when a shipment has been collected
+	-- self:RegisterEvent('VIGNETTE_REMOVED') -- for resource cache
 	self:RegisterEvent('ITEM_PUSH', function(event, count, icon)
 		if not C_Garrison.IsOnGarrisonMap() then return end
 		ScanGarrisonStatus()
