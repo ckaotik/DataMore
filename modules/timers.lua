@@ -191,6 +191,7 @@ function timers:OnEnable()
 	self:RegisterEvent('GARRISON_BUILDING_PLACED', ScanGarrisonStatus)
 	hooksecurefunc(C_Garrison, 'RequestShipmentInfo', ScanGarrisonStatus)
 	hooksecurefunc(C_Garrison, 'RequestLandingPageShipmentInfo', ScanGarrisonStatus)
+	hooksecurefunc(C_Garrison, 'RequestShipmentCreation', ScanGarrisonStatus)
 	C_Garrison.RequestLandingPageShipmentInfo() -- will also trigger a scan
 	-- TODO: there is currently no way to notice when a shipment has been collected
 	-- self:RegisterEvent('VIGNETTE_REMOVED') -- for resource cache
