@@ -254,7 +254,7 @@ local function HandleMail(mail, recipient)
 		-- local player = DataStore:GetNameOfMain(recipientName)
 		-- if player and DataStore:IsGuildMemberOnline(player) then
 		if isGuild then
-			NotifyGuildMail(mail, player, recipientName)
+			NotifyGuildMail(mail, contactName, recipient)
 		end
 	end
 end
