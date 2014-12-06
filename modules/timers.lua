@@ -22,6 +22,9 @@ local defaults = {
 	},
 }
 
+-- --------------------------------------------------------
+--  Utility functions
+-- --------------------------------------------------------
 local function SingularPluralPattern(singular, plural)
 	return singular:gsub('(.)', '%1?') .. plural:gsub('(.)', '%1?')
 end
@@ -54,42 +57,84 @@ local function ParseTimeString(timeString)
 	return seconds
 end
 
-local function ScanGarrisonStatus()
-	local character = timers.ThisCharacter
-
-	wipe(character.Garrison.Shipments)
-	wipe(character.Garrison.Buildings)
-	-- Note: get info on buildings using C_Garrison.GetBuildingInfo(buildingID)
+-- --------------------------------------------------------
+--  Garrison Scanning
+-- --------------------------------------------------------
+-- Note: get info on buildings using C_Garrison.GetBuildingInfo(buildingID)
+local function ScanGarrisonBuildings()
+	local buildings = timers.ThisCharacter.Garrison.Buildings
+	wipe(buildings)
 	for index, building in ipairs(C_Garrison.GetBuildings()) do
-		-- work orders
-		local name, texture, maxOrders, numReady, numActive, timeStarted, duration, _, _, _, _, itemID = C_Garrison.GetLandingPageShipmentInfo(building.buildingID)
-		if maxOrders and maxOrders > 0 then
-			local nextBatch = timeStarted and (timeStarted + duration) or 0
-			character.Garrison.Shipments[building.buildingID] = strjoin('|', nextBatch, numActive or 0, numReady or 0, maxOrders, itemID or '')
-		end
-
-		-- buildings in progress
 		local _, name, texPrefix, texture, description, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, inProgress, timeStarted, duration = C_Garrison.GetOwnedBuildingInfo(building.plotID)
 		if inProgress then
-			character.Garrison.Buildings[building.buildingID] = timeStarted + duration
+			-- buildings in progress
+			buildings[building.buildingID] = timeStarted + duration
 		end
 	end
+	timers.ThisCharacter.lastUpdate = time()
+end
 
-	-- TODO: rewrite to store correct timestamp
-	-- [[
-	local missions = character.Garrison.Missions
-	local now = time()
-	-- flag old missions
-	for missionID, expires in pairs(missions) do
-		missions[missionID] = expires > now and -1 * expires or nil
+-- Note: get info on shipments using C_Garrison.GetLandingPageShipmentInfo(buildingID)
+local function ScanGarrisonShipments(event, plotID)
+	if event ~= 'GARRISON_LANDINGPAGE_SHIPMENTS' then
+		-- update shipment data
+		C_Garrison.RequestLandingPageShipmentInfo()
+		return
 	end
-	-- now update/add currently active missions
+
+	local shipments = timers.ThisCharacter.Garrison.Shipments
+	for buildingID, info in pairs(shipments) do
+		if not C_Garrison.GetLandingPageShipmentInfo(buildingID) then
+			-- no longer have this building
+			shipments[buildingID] = nil
+		end
+	end
+	for index, building in ipairs(C_Garrison.GetBuildings()) do
+		local buildingID = building.buildingID
+		if not plotID or building.plotID == plotID then
+			local _, _active, _ready, _max = timers.GetGarrisonShipmentInfo(timers.ThisCharacter, buildingID)
+			         _active, _ready, _max = _active or 0, _ready or 0, _max or 0
+			local _, _, maxOrders, numReady, numActive, started, duration = C_Garrison.GetLandingPageShipmentInfo(buildingID)
+			            maxOrders, numReady, numActive = maxOrders or 0, numReady or 0, numActive or 0
+			if maxOrders > 0 then
+				local nextBatch = started and (started + duration) or 0
+				shipments[buildingID] = strjoin('|', nextBatch, numActive, numReady, maxOrders)
+			else
+				shipments[buildingID] = nil
+			end
+			-- send messages
+			if not _active or numActive > _active then
+				-- building we didn't have before -or- new shipment started
+				timers:SendMessage('DATAMORE_TIMERS_SHIPMENT_STARTED', buildingID)
+			end
+			if numReady == 0 and _ready > 0 then
+				timers:SendMessage('DATAMORE_TIMERS_SHIPMENT_COLLECTED', buildingID)
+			elseif numReady > _ready then
+				timers:SendMessage('DATAMORE_TIMERS_SHIPMENT_READY', buildingID, numReady, numActive, maxOrders)
+			end
+		end
+	end
+	timers.ThisCharacter.lastUpdate = time()
+end
+
+-- Note: get info on missions using C_Garrison.GetBasicMissionInfo(missionID)
+local function ScanGarrisonMissions(event, ...)
+	local missions = timers.ThisCharacter.Garrison.Missions
+	local now = time()
+	-- flag known and remove outdated missions
+	for missionID, expires in pairs(missions) do
+		if expires <= now then
+			missions[missionID] = nil
+		else
+			missions[missionID] = -1 * expires
+		end
+	end
+	-- update/add currently active missions
 	for index, mission in ipairs(C_Garrison.GetInProgressMissions()) do
 		if missions[mission.missionID] then
 			-- mission is known, remove flag but don't touch expiry
 			missions[mission.missionID] = -1 * missions[mission.missionID]
 		else
-			-- new mission
 			local seconds = ParseTimeString(mission.timeLeft)
 			if seconds and seconds/mission.durationSeconds >= 0.95 then
 				-- mission was just accepted
@@ -106,14 +151,6 @@ local function ScanGarrisonStatus()
 			missions[missionID] = nil
 		end
 	end
-	--]]
-	--[[ wipe(character.Garrison.Missions)
-	-- Note: get info on missions using C_Garrison.GetBasicMissionInfo(missionID)
-	for index, mission in ipairs(C_Garrison.GetInProgressMissions()) do
-		-- missions
-		-- this sucks but we don't have seconds remaining :(
-		character.Garrison.Missions[mission.missionID] = time() + ParseTimeString(mission.timeLeft) or 0
-	end --]]
 	timers.ThisCharacter.lastUpdate = time()
 end
 
@@ -127,7 +164,9 @@ local function ScanSpellStatus()
 	-- addon:SendMessage("DATASTORE_ITEM_COOLDOWN_UPDATED", itemID)
 end
 
+-- --------------------------------------------------------
 -- Mixins
+-- --------------------------------------------------------
 function timers.GetGarrisonMissionExpiry(character, missionID)
 	local mission = character.Garrison.Missions[missionID]
 	return mission
@@ -155,8 +194,8 @@ end
 function timers.GetGarrisonShipmentInfo(character, buildingID)
 	local shipment = character.Garrison.Shipments[buildingID]
 	if shipment then
-		local nextBatch, numActive, numReady, maxOrders, itemID = strsplit('|', shipment)
-		return nextBatch*1, numActive*1, numReady*1, maxOrders*1, itemID
+		local nextBatch, numActive, numReady, maxOrders = strsplit('|', shipment)
+		return nextBatch*1, numActive*1, numReady*1, maxOrders*1
 	end
 end
 function timers.IterateGarrisonShipments(character)
@@ -178,6 +217,12 @@ local PublicMethods = {
 	IterateGarrisonShipments = timers.IterateGarrisonShipments,
 }
 
+local garrisonMissionEvents = {
+	'GARRISON_MISSION_COMPLETE_RESPONSE',   -- for failed missions
+	'GARRISON_MISSION_BONUS_ROLL_COMPLETE', -- for succeeded missions
+	'GARRISON_MISSION_STARTED' -- for new missions
+}
+local garrisonBuildingEvents = {'GARRISON_BUILDING_PLACED', 'GARRISON_BUILDING_ACTIVATED', 'GARRISON_BUILDING_ACTIVATABLE'}
 function timers:OnEnable()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
@@ -186,23 +231,41 @@ function timers:OnEnable()
 		DataStore:SetCharacterBasedMethod(methodName)
 	end
 
-	self:RegisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS', ScanGarrisonStatus)
-	self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE', ScanGarrisonStatus)
-	self:RegisterEvent('GARRISON_BUILDING_PLACED', ScanGarrisonStatus)
-	hooksecurefunc(C_Garrison, 'RequestShipmentInfo', ScanGarrisonStatus)
-	hooksecurefunc(C_Garrison, 'RequestLandingPageShipmentInfo', ScanGarrisonStatus)
-	hooksecurefunc(C_Garrison, 'RequestShipmentCreation', ScanGarrisonStatus)
-	C_Garrison.RequestLandingPageShipmentInfo() -- will also trigger a scan
-	-- TODO: there is currently no way to notice when a shipment has been collected
-	-- self:RegisterEvent('VIGNETTE_REMOVED') -- for resource cache
-	self:RegisterEvent('ITEM_PUSH', function(event, count, icon)
+	for _, event in pairs(garrisonMissionEvents) do
+		self:RegisterEvent(event, ScanGarrisonMissions)
+	end
+	for _, event in pairs(garrisonBuildingEvents) do
+		self:RegisterEvent(event, ScanGarrisonBuildings)
+	end
+	-- shipment handling is complicated
+	self:RegisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS', ScanGarrisonShipments)
+	self:RegisterEvent('SHIPMENT_CRAFTER_INFO', function(event, success, numActive, maxOrders, plotID)
+		if not success then return end
+		ScanGarrisonShipments('GARRISON_LANDINGPAGE_SHIPMENTS', plotID)
+	end)
+	-- TODO: there is currently no easy way to notice when a shipment has been collected
+	self:RegisterEvent('ITEM_PUSH', function(event, inventoryID, icon)
 		if not C_Garrison.IsOnGarrisonMap() then return end
-		ScanGarrisonStatus()
+		ScanGarrisonShipments()
+	end)
+	self:RegisterEvent('CHAT_MSG_CURRENCY', function(event, msg)
+		if not C_Garrison.IsOnGarrisonMap() then return end
+		ScanGarrisonShipments()
+	end)
+
+	-- initial scan
+	C_Timer.After(1, function()
+		C_Garrison.RequestLandingPageShipmentInfo()
+		-- ScanGarrisonShipments()
+		ScanGarrisonBuildings()
+		ScanGarrisonMissions()
 	end)
 end
 
 function timers:OnDisable()
-	self:UnregisterEvent('GARRISON_MISSION_STARTED')
-	self:UnregisterEvent('GARRISON_BUILDING_PLACED')
+	for _, event in pairs(garrisonMissionEvents)  do self:UnregisterEvent(event) end
+	for _, event in pairs(garrisonBuildingEvents) do self:UnregisterEvent(event) end
+	self:UnregisterEvent('SHIPMENT_CRAFTER_INFO')
+	self:UnregisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS')
 	self:UnregisterEvent('ITEM_PUSH')
 end
