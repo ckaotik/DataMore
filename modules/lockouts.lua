@@ -76,6 +76,7 @@ local function UpdateLFGStatus()
 	lockouts.ThisCharacter.lastUpdate = time()
 end
 
+-- TODO: this API is broken in WoD....
 local function UpdateSavedBosses()
 	local bosses = lockouts.ThisCharacter.WorldBosses
 	wipe(bosses)
@@ -94,11 +95,11 @@ local function UpdateSavedInstances()
 
 	for index = 1, GetNumSavedInstances() do
 		local lockout = GetSavedInstanceChatLink(index)
-		-- local guid, instanceID, difficulty, defeatedBosses = lockout:match('instancelock:([^:]+):([^:]+):([^:])+:([^:]+)')
-		--      instanceID, defeatedBosses = tonumber(instanceID), tonumber(defeatedBosses)
+		local instanceMapID = lockout:match('instancelock:[^:]+:([^:]+)') * 1
+		-- link format: |Hinstancelock:CHARACTER_GUID:INSTANCEMAPID:DIFFICULTYID:DEFEATEDBOSSES|h[INSTANCENAME]|h
 		-- * defeatedBosses is a bitmap, but boss order differs from instance encounter order
-		-- * instanceID is unique, but not found anywhere else ingame, especially not in EJ/API
-		-- * instanceName does not match that of the EJ either
+		-- * instanceMapID is unique, but not found anywhere else ingame, especially not in EJ/API
+		-- Get the instance name: instanceName = GetRealZoneText(instanceMapID)
 
 		local instanceName, lockoutID, resetsIn, difficulty, locked, extended, instanceIDMostSig, isRaid, maxPlayers, difficultyName, numBosses, numDefeatedBosses = GetSavedInstanceInfo(index)
 		local reset = (locked and resetsIn > 0) and (resetsIn + time()) or 0
@@ -112,7 +113,7 @@ local function UpdateSavedInstances()
 		-- marker so we know how many bosses there are
 		killedBosses = bit.bor(killedBosses, 2^numBosses)
 
-		instances[lockoutID] = strjoin('|', instanceName, difficulty, reset, extended and 1 or 0, isRaid and 1 or 0, killedBosses)
+		instances[lockoutID] = strjoin('|', instanceMapID, difficulty, reset, extended and 1 or 0, isRaid and 1 or 0, killedBosses)
 		instanceLinks[lockoutID] = lockout
 	end
 	lockouts.ThisCharacter.lastUpdate = time()
@@ -248,7 +249,7 @@ function lockouts.GetInstanceLockoutInfo(character, lockoutID)
 	local lockoutData = lockoutID and character.Instances[lockoutID]
 	if not lockoutData then return end
 
-	local instanceName, difficulty, instanceReset, extended, isRaid, defeatedBosses = strsplit('|', lockoutData)
+	local instanceMapID, difficulty, instanceReset, extended, isRaid, defeatedBosses = strsplit('|', lockoutData)
 	local defeatedBosses = tonumber(defeatedBosses)
 	local numDefeated, numBosses = 0, 0
 	while defeatedBosses and defeatedBosses > 1 do -- ignore marker bit
@@ -257,7 +258,7 @@ function lockouts.GetInstanceLockoutInfo(character, lockoutID)
 		defeatedBosses = bit.rshift(defeatedBosses, 1)
 	end
 
-	return instanceName, tonumber(difficulty), tonumber(instanceReset), extended == '1', isRaid == '1', numDefeated, numBosses
+	return tonumber(instanceMapID), tonumber(difficulty), tonumber(instanceReset), extended == '1', isRaid == '1', numDefeated, numBosses
 end
 
 function lockouts.GetInstanceLockoutEncounters(character, lockoutID)
