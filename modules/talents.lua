@@ -201,10 +201,7 @@ end
 function talents.GetTalentInfo(character, tier, specNum)
 	local talentID = talents.GetTalentSelection(character, tier, specNum)
 	if talentID then
-		local characterKey = DataStore:GetCurrentCharacterKey()
-		local _, class = DataStore:GetCharacterClass(characterKey)
-	    	     class = classIDs[class]
-		return GetTalentInfo(talentID, true, nil, nil, class)
+		return GetTalentInfoByID(talentID)
 	end
 end
 
@@ -333,15 +330,8 @@ end
 
 -- these are no longer really necessary but in here for compatibility purposes
 -- DEPRECATED: use GetTalentLink(talentIndex, true, classIndex) instead
-local function _GetTalentLink(index, class, compatibilityMode)
-	if compatibilityMode then
-		-- this code is old and talent links only reference the current character's talents
-		local id, name = index, compatibilityMode
-		return format('|cff4e96f7|Htalent:%s|h[%s]|h|r', id, name)
-	else
-		class = classIDs[class]
-		return GetTalentLink(index, true, class)
-	end
+local function _GetTalentLink(talentID)
+	return GetTalentLink(talentID)
 end
 local function _GetClassTrees(class)
 	local class = classIDs[class]
