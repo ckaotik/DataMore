@@ -75,23 +75,28 @@ local function ScanGarrisonBuildings()
 end
 
 -- Note: get info on shipments using C_Garrison.GetLandingPageShipmentInfo(buildingID)
-local function ScanGarrisonShipments(event, plotID)
+local buildingPlots = {}
+local function ScanGarrisonShipments(event, updatedPlotID)
 	if event ~= 'GARRISON_LANDINGPAGE_SHIPMENTS' then
 		-- update shipment data
 		C_Garrison.RequestLandingPageShipmentInfo()
 		return
 	end
 
+	wipe(buildingPlots)
+	for _, building in ipairs(C_Garrison.GetBuildings()) do
+		buildingPlots[building.buildingID] = building.plotID
+	end
+
 	local shipments = timers.ThisCharacter.Garrison.Shipments
 	for buildingID, info in pairs(shipments) do
-		if not C_Garrison.GetLandingPageShipmentInfo(buildingID) then
+		if not buildingPlots[buildingID] then
 			-- no longer have this building
 			shipments[buildingID] = nil
 		end
 	end
-	for index, building in ipairs(C_Garrison.GetBuildings()) do
-		local buildingID = building.buildingID
-		if not plotID or building.plotID == plotID then
+	for buildingID, plotID in pairs(buildingPlots) do
+		if not updatedPlotID or plotID == updatedPlotID then
 			local _, _active, _ready, _max = timers.GetGarrisonShipmentInfo(timers.ThisCharacter, buildingID)
 			         _active, _ready, _max = _active or 0, _ready or 0, _max or 0
 			local _, _, maxOrders, numReady, numActive, started, duration = C_Garrison.GetLandingPageShipmentInfo(buildingID)
