@@ -17,7 +17,7 @@ libs\LibStub\LibStub.lua
 libs\AceAddon-3.0\AceAddon-3.0.lua
 libs\AceDB-3.0\AceDB-3.0.lua
 libs\AceEvent-3.0\AceEvent-3.0.lua
-libs\LibItemCache-1.1\LibItemCache-1.1.lua
+libs\LibItemCache-1.1\LibItemCache-1.1.xml
 #@end-no-lib-strip@
 
 
