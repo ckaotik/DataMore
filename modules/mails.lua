@@ -51,7 +51,7 @@ local defaults = {
 -- Data Gathering
 -- --------------------------------------------------------
 local function IsRecipientKnown(recipient, realm)
-	if recipient and realm then recipient = strjoin('-', recipient, realm:gsub(' ', '')) end
+	if recipient and realm then recipient = recipient .. '-' .. realm:gsub(' ', '') end
 	local recipientName, recipientRealm = strsplit('-', recipient)
 	if not recipientRealm or recipientRealm == '' then
 		recipientRealm = playerRealm
@@ -75,14 +75,17 @@ local function IsRecipientKnown(recipient, realm)
 			local hasFocus, toonName, client, realmName, realmID, faction = BNGetFriendToonInfo(friendIndex, toonIndex)
 			if hasFocus and client == _G.BNET_CLIENT_WOW then
 				-- this allows us to override the whisper recipient
-				focussedToon = strjoin('-', toonName, realmName:gsub(' ', ''))
+				focussedToon = toonName .. '-' .. realmName:gsub(' ', '')
 			end
 			if client == _G.BNET_CLIENT_WOW then
-				if toonName:lower() == recipientName and realmName:lower() == recipientRealm then
-					if not focussedToon then
-						focussedToon = strjoin('-', toonName, realmName:gsub(' ', ''))
-					end
+				local toonCompare, realmCompare  = toonName:lower(), realmName:gsub(' ', ''):lower()
+				if toonCompare == recipientName and realmCompare == recipientRealm then
+					focussedToon = focussedToon or toonName .. '-' .. realmName
 					isBNetFriend = true
+				end
+				if hasFocus then
+					-- this allows us to override the whisper recipient
+					focussedToon = toonName .. '-' .. realmName:gsub(' ', '')
 				end
 			end
 		end
@@ -224,7 +227,7 @@ local function NotifyGuildMail(mail, player, recipientName)
 	mails:SendCommMessage(commPrefix, mails:Serialize(MSG_SENDMAIL_END), 'WHISPER', player)
 end
 
-local function StoreForeignMail(recipientKey, mail)
+local function StoreForeignMail(mail, recipientKey)
 	if not recipientKey or not mail then return end
 	local character = mails.db.global.Characters[recipientKey]
 	table.insert(character.Mails, mail)
@@ -245,7 +248,7 @@ local function HandleMail(mail, recipient)
 	local recipientKey = GetRecipientKey(recipient)
 	if recipientKey then
 		-- recipient is an alt
-		StoreForeignMail(recipientKey, mail)
+		StoreForeignMail(mail, recipientKey)
 	else
 		local contactName, isGuild, isFriend, isBNFriend = IsRecipientKnown(recipient)
 
@@ -321,16 +324,18 @@ end
 -- --------------------------------------------------------
 local function HandleGuildNotification(args)
 	local sender, recipientName = unpack(args)
-	local recipientKey = strjoin('.', 'Default', GetRealmName(), recipientName) -- TODO: this can't be correct
+	if not sender:find('-') then -- must be same realm then
+		sender = sender .. '-' .. select(2, UnitFullName('player'))
+	end
+	-- local recipientKey = strjoin('.', 'Default', GetRealmName(), recipientName) -- TODO: this can't be correct
 	local mail = {
-		sender = sender, -- TODO: handle realm name
+		sender = sender, -- TODO: handle realm name for people from other realms
 		attachments = {},
 	}
 
-	-- TODO: mails in transit ("pending") if non guild member or guild level < 17
+	-- TODO: mails in transit ("pending") if non guild member
 	-- mail.status = timeOfArrival
 	local contactName, isGuild, isFriend, isBNFriend = IsRecipientKnown(sender)
-	print('new mail from', sender, contactName, isGuild, isFriend, isBNFriend)
 
 	coroutine.yield()
 
@@ -354,7 +359,7 @@ local function HandleGuildNotification(args)
 	end
 
 	if args.event == MSG_SENDMAIL_END then
-		mails.db.
+		-- HandleMail(mail, recipientName)
 		mails:SendMessage('DATASTORE_GUILD_MAIL_RECEIVED', sender, recipientName)
 	end
 end
@@ -366,7 +371,7 @@ local function ResumeRoutine(event, ...)
 		commArgs[i] = select(i, ...)
 	end
 	commArgs.event = event
-	commRoutine(commArgs) -- only accepted on first start
+	commRoutine(commArgs) -- args are only accepted on first start
 end
 local GuildCommCallbacks = {
 	[MSG_SENDMAIL_INIT] = function(...)
@@ -400,8 +405,7 @@ function mails:OnInitialize()
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetMailStyle')
 
-	-- DataStore:SetGuildCommCallbacks(commPrefix, GuildCommCallbacks)
-	-- self:RegisterComm(commPrefix, DataStore:GetGuildCommHandler())
+	DataStore:SetGuildCommCallbacks(commPrefix, GuildCommCallbacks)
 end
 
 function mails:OnEnable()
