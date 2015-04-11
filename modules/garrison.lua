@@ -233,19 +233,17 @@ function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, succes
 		-- only logging rare missions
 		local followers, goldBoost, resourceBoost = '', 0, 0
 		for followerIndex = 1, 3 do
-			if mission.followers then
-				local followerID = mission.followers[followerIndex]
+			local followerID, garrFollowerID = mission.followers and mission.followers[followerIndex], 0
+			if followerID then
 				for traitIndex = 1, 3 do
 					local traitID = C_Garrison.GetFollowerTraitAtIndex(followerID, traitIndex)
 					goldBoost     =     goldBoost + (traitID == 256 and 1 or 0)
 					resourceBoost = resourceBoost + (traitID ==  79 and 1 or 0)
 				end
-				local followerLink   = C_Garrison.GetFollowerLink(followerID)
-				local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
-				followers = (followers ~= '' and followers..':' or '') .. garrFollowerID
-			else
-				followers = (followers ~= '' and followers..':' or '') .. '0'
+				local followerLink = C_Garrison.GetFollowerLink(followerID)
+				garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
 			end
+			followers = (followers ~= '' and followers..':' or '') .. garrFollowerID
 		end
 
 		local successChance = C_Garrison.GetRewardChance(missionID)
