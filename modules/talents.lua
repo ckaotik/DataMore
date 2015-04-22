@@ -205,6 +205,10 @@ function talents.GetTalentInfo(character, tier, specNum)
 	end
 end
 
+function talents.GetActiveTalents(character)
+	return character.active
+end
+
 -- == Glyphs API ==========================================
 local glyphs = talents
 
@@ -373,6 +377,7 @@ local PublicMethods = {
 	GetNumUnspentTalents = talents.GetNumUnspentTalents,
 	GetTalentSelection   = talents.GetTalentSelection,
 	GetTalentInfo        = talents.GetTalentInfo,
+	GetActiveTalents     = talents.GetActiveTalents,
 
 	-- GetNumGlyphs         = glyphs.GetNumGlyphs,
 	-- GetGlyphLink         = glyphs.GetGlyphLink,
