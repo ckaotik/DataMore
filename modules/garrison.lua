@@ -89,21 +89,22 @@ local buildingNames = {
 -- buildings
 local function ScanPlot(plotID)
 	if not plotID then return end
-	local buildingID, name, _, _, rank, isBeingBuilt, timeStarted, buildTime, _, canUpgrade, _ = C_Garrison.GetOwnedBuildingInfoAbbrev(plotID)
-	-- follower data is not available upon login
-	local garrFollowerID = select(6, C_Garrison.GetFollowerInfoForBuilding(plotID))
-	-- get the rank one building
-	buildingID = select(14, C_Garrison.GetBuildingInfo(buildingID))[1] or buildingID
-
-	garrison.ThisCharacter.Buildings[buildingID] = garrison.ThisCharacter.Buildings[buildingID] or {}
-	local buildingInfo = garrison.ThisCharacter.Buildings[buildingID]
-	buildingInfo.rank = rank
-	buildingInfo.canUpgrade = canUpgrade
-	if rank == GARRISON_MAX_BUILDING_LEVEL then
-		buildingInfo.canUpgrade = nil
+	local buildingID, name, texPath, icon, description, rank, currencyID, currencyQty, goldQty, _, needsPlan, _, _, upgrades, canUpgrade, isMaxLevel, hasFollowerSlot, _, _, _, isBeingBuilt, timeStarted, buildDuration, _, canActivate = C_Garrison.GetOwnedBuildingInfo(plotID)
+	-- TODO: upgrades is not available unless on garrison map? weird...
+	local baseID = rank == 1 and buildingID or (upgrades and upgrades[1]) or nil
+	if not baseID then print('cannot find building base id', plotID, buildingID, upgrades, upgrades and upgrades[1]) return end
+	if isBeingBuilt then
+		print('is being built', baseID, buildingID, name, texPath, icon, description, rank, currencyID, currencyQty, goldQty, needsPlan, upgrades, canUpgrade, isMaxLevel, hasFollowerSlot, isBeingBuilt, timeStarted, buildDuration, canActivate)
 	end
-	buildingInfo.activate = isBeingBuilt and (timeStarted + buildTime) or nil
+	local garrFollowerID = hasFollowerSlot and select(6, C_Garrison.GetFollowerInfoForBuilding(plotID))
+
+	garrison.ThisCharacter.Buildings[baseID] = garrison.ThisCharacter.Buildings[baseID] or {}
+	local buildingInfo = garrison.ThisCharacter.Buildings[baseID]
+	buildingInfo.rank = rank
 	buildingInfo.follower = tonumber(garrFollowerID or '', 16)
+	buildingInfo.activate = isBeingBuilt and (timeStarted + buildTime) or nil
+	buildingInfo.canUpgrade = canUpgrade
+	if isMaxLevel then buildingInfo.canUpgrade = nil end
 end
 
 local function ScanBuildings()
@@ -196,7 +197,7 @@ end
 local function ScanMission(missionID)
 	if not missionID then return end
 	local mission   = C_Garrison.GetBasicMissionInfo(missionID)
-	local timestamp = mission.offerEndTime or (time() + select(5, C_Garrison.GetMissionTimes(missionID)))
+	local timestamp = time() + (mission.offerEndTime or select(5, C_Garrison.GetMissionTimes(missionID)))
 
 	local followers
 	for _, followerID in ipairs(mission.followers) do
@@ -258,6 +259,13 @@ function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, succes
 	-- remove mission from active list
 	self.ThisCharacter.MissionHistory[missionID] = nil
 end
+function garrison:GARRISON_MISSION_LIST_UPDATE(event, missionStarted)
+	-- started missions are already handled above
+	if missionStarted then return end
+	for i, mission in pairs(C_Garrison.GetAvailableMissions()) do
+		ScanMission(mission.missionID)
+	end
+end
 
 -- --------------------------------------------------------
 -- Mixins
@@ -272,12 +280,14 @@ function garrison.IterateMissions(character)
 	local missions, missionID = character.Garrison.Missions, nil
 	return function()
 		missionID = next(missions, missionID)
-		return missionID
+		if missionID then
+			return missionID, garrison.GetMissionInfo(character, missionID)
+		end
 	end
 end
 
 function garrison.GetBuildingInfo(character, building)
-	local buildingID = type(building) == 'number' and building or 0
+	local buildingID = type(building) == 'number' and building or nil
 	for id, name in pairs(buildingNames) do
 		if building == name then
 			buildingID = id; break
@@ -296,6 +306,15 @@ function garrison.IterateBuildings(character)
 		return buildingID, garrison.GetBuildInfo(character, buildingID)
 	end
 end
+--[[ needs to replace
+function timers.IterateGarrisonBuilds(character)
+	local builds, buildingID = character.Garrison.Buildings, nil
+	return function()
+		buildingID = next(builds, buildingID)
+		return buildingID, timers.GetGarrisonBuildExpiry(character, buildingID)
+	end
+end
+--]]
 
 function garrison.GetShipmentInfo(character, buildingID)
 	local shipment = character.Garrison.Shipments[buildingID]
@@ -311,6 +330,17 @@ function garrison.IterateShipments(character)
 		return buildingID, garrison.GetShipmentInfo(character, buildingID)
 	end
 end
+--[[ needs to replace
+function timers.IterateGarrisonShipments(character)
+	local missions, buildingID = character.Garrison.Shipments, nil
+	return function()
+		buildingID = next(missions, buildingID)
+		-- TODO: buildingID is actually baseID, return both!
+		-- buildingID, nextBatch, numActive, numReady, maxOrders
+		return buildingID, timers.GetGarrisonShipmentInfo(character, buildingID)
+	end
+end
+--]]
 
 -- Setup
 local PublicMethods = {
@@ -342,6 +372,8 @@ function garrison:OnEnable()
 	-- missions
 	self:RegisterEvent('GARRISON_MISSION_STARTED')
 	self:RegisterEvent('GARRISON_MISSION_COMPLETE_RESPONSE')
+	-- self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE') -- overwritten for first run
+	self:RegisterEvent('GARRISON_RANDOM_MISSION_ADDED', print) -- TODO: investigate!
 
 	-- followers
 	self:RegisterEvent('GARRISON_FOLLOWER_ADDED')
@@ -359,15 +391,8 @@ function garrison:OnEnable()
 			self.ThisCharacter.lastUpdate = time()
 		end
 		self:UnregisterEvent(event)
-
-		self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE', print) -- (bool), called with <true> after _STARTED, <nil> otherwise/at login, TODO
+		self:RegisterEvent(event)
 	end, self)
-
-	-- TODO
-	self:RegisterEvent('GARRISON_RANDOM_MISSION_ADDED', print)
-	self:RegisterEvent('GARRISON_MISSION_BONUS_ROLL_COMPLETE', print) -- (missionID, success)
-	self:RegisterEvent('GARRISON_MISSION_BONUS_ROLL_LOOT', print) -- (itemID), follows positive ROLL_COMPLETE
-	self:RegisterEvent('GARRISON_MISSION_FINISHED', print) -- (missionID), shows mission toast
 
 	--[[ shipment handling is complicated
 	self:RegisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS', ScanGarrisonShipments)
@@ -395,6 +420,8 @@ function garrison:OnDisable()
 	-- mission events
 	self:UnregisterEvent('GARRISON_MISSION_STARTED')
 	self:UnregisterEvent('GARRISON_MISSION_COMPLETE_RESPONSE')
+	-- self:UnregisterEvent('GARRISON_RANDOM_MISSION_ADDED')
+	self:UnregisterEvent('GARRISON_MISSION_LIST_UPDATE')
 
 	-- follower events
 	self:UnregisterEvent('GARRISON_FOLLOWER_ADDED')
