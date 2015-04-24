@@ -158,7 +158,8 @@ function glyphs.GetGlyphInfo(character, index)
 	      glyphID, glyphType = tonumber(glyphID), tonumber(glyphType)
 
 	if glyphID == 0 then
-		glyph   = _G.GLYPH_STRING_PLURAL[glyphType]
+		glyph   = _G.GLYPH_STRING_PLURAL and _G.GLYPH_STRING_PLURAL[glyphType]
+			or (glyphType == 1 and _G.MAJOR_GLYPHS or _G.MINOR_GLYPHS)
 		glyphID = nil
 		isKnown = true
 	else
@@ -199,7 +200,9 @@ function glyphs:OnInitialize()
 
 	DataStore:RegisterModule(self.name, self, PublicMethods, true)
 	for funcName, funcImpl in pairs(PublicMethods) do
-		DataStore:SetCharacterBasedMethod(funcName)
+		if funcName ~= 'GetGlyphInfoByID' then
+			DataStore:SetCharacterBasedMethod(funcName)
+		end
 	end
 end
 
