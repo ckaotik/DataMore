@@ -1,12 +1,12 @@
-## Interface: 50400
+## Interface: 60100
 ## Title: DataMore
 ## Notes: Stores additional character data in DataStore
 ## Author: ckaotik
-## Version: 5.4v0
+## Version: 6.1v0
 
 ## Dependencies: DataStore
 ## OptionalDeps: DataStore_Characters, DataStore_Achievements, DataStore_Auctions, DataStore_Containers, DataStore_Crafts, DataStore_Currencies, DataStore_Garrisons, DataStore_Inventory, DataStore_Mails, DataStore_Pets, DataStore_Quests, DataStore_Reputations, DataStore_Spells, DataStore_Stats, DataStore_Talents
-## SavedVariables: DataMore_LockoutsDB, DataMore_TalentsDB, DataMore_GlyphsDB, DataMore_QuestsDB, DataMore_EquipmentDB, DataMore_GarrisonDB, DataMore_MailsDB, DataMore_FactionsDB, DataMore_TimersDB
+## SavedVariables: DataMore_LockoutsDB, DataMore_SpecializationsDB, DataMore_GlyphsDB, DataMore_QuestsDB, DataMore_EquipmentDB, DataMore_GarrisonDB, DataMore_MailsDB, DataMore_FactionsDB, DataMore_TimersDB
 
 ## X-Category: Misc
 ## X-License: BSD
@@ -33,5 +33,5 @@ modules\glyphs.lua
 modules\lockouts.lua
 modules\mails.lua
 modules\quests.lua
-modules\talents.lua
+modules\specializations.lua
 modules\timers.lua
