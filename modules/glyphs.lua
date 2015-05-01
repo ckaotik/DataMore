@@ -2,7 +2,7 @@ local addonName, addon, _ = ...
 local glyphs = addon:NewModule('Glyphs', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore
--- GLOBALS: UnitClass, GetItemInfo, GetNumSpecGroups, GetNumGlyphSockets, GetGlyphSocketInfo. GetNumGlyphs, GetGlyphInfo, ToggleGlyphFilter, IsGlyphFlagSet
+-- GLOBALS: UnitClass, GetItemInfo, GetNumSpecGroups, GetNumGlyphSockets, GetGlyphSocketInfo, GetNumGlyphs, GetGlyphInfo, ToggleGlyphFilter, IsGlyphFlagSet
 -- GLOBALS: wipe, type, strjoin, strsplit, tonumber, pairs, ipairs, time
 local tinsert, tsort = table.insert, table.sort
 
@@ -12,13 +12,11 @@ local defaults = {
 			['*'] = { -- character key, e.g. "Account.Realm.Name"
 				lastUpdate = nil,
 				knownGlyphs  = {},
-				group1Glyphs = {},
-				group2Glyphs = {},
 			}
 		},
-		-- stores glyph lists
+		-- stores class glyph lists
 		glyphs = {
-			['*'] = {
+			['*'] = { -- class name
 				-- [index] = strjoin('|', glyphID, glyphType, icon, description)
 			},
 		},
@@ -40,34 +38,11 @@ local glyphNameByID = setmetatable({}, {
 	end
 })
 
--- scans which glyphs are used in which spec/socket
-local function ScanGlyphs()
-	local data = glyphs.ThisCharacter
-	for specNum = 1, GetNumSpecGroups() do
-		local specGlyphs = data['group'..specNum..'Glyphs']
-		wipe(specGlyphs)
-
-		for socket = 1, GetNumGlyphSockets() do
-			local isAvailable, glyphType, tooltipIndex, spellID, icon, glyphID = GetGlyphSocketInfo(socket, specNum)
-			if not isAvailable then
-				specGlyphs[socket] = ''
-			elseif not glyphID then
-				specGlyphs[socket] = '0'
-			else
-				specGlyphs[socket] = strjoin('|', glyphID, spellID or '')
-			end
-		end
-	end
-	data.lastUpdate = time()
-end
-
 -- scans which glyphs are known
-local filters = { _G.GLYPH_FILTER_KNOWN, _G.GLYPH_FILTER_UNKNOWN, _G.GLYPH_TYPE_MAJOR, _G.GLYPH_TYPE_MINOR, }
+local filters = { _G.GLYPH_FILTER_KNOWN, _G.GLYPH_FILTER_UNKNOWN, _G.GLYPH_TYPE_MAJOR, _G.GLYPH_TYPE_MINOR }
 local function ScanGlyphList()
 	-- Blizzard provides no GetGlyphInfo(glyphID) function so we need to store all this data ourselves
 	local data = glyphs.ThisCharacter
-	-- data.knownGlyphs = 0
-	if type(data.knownGlyphs) ~= 'table' then data.knownGlyphs = {} end
 	wipe(data.knownGlyphs)
 
 	local _, class = UnitClass('player')
@@ -93,8 +68,8 @@ local function ScanGlyphList()
 			classGlyphs[index] = strjoin('|', 0, glyphType)
 		end
 
+		-- not storing as bit map b/c when glyph list changes, als char data becomes invalid
 		if glyphID and isKnown then
-			-- data.knownGlyphs = data.knownGlyphs + bit.lshift(1, index-1)
 			data.knownGlyphs[glyphID] = true
 		end
 	end
@@ -188,11 +163,12 @@ end
 
 -- == Setup ===============================================
 local PublicMethods = {
-	GetNumGlyphs     = glyphs.GetNumGlyphs,
-	GetGlyphLink     = glyphs.GetGlyphLink,
-	GetGlyphInfo     = glyphs.GetGlyphInfo,
-	GetGlyphInfoByID = glyphs.GetGlyphInfoByID,
-	IsGlyphKnown     = glyphs.IsGlyphKnown,
+	GetNumGlyphs       = glyphs.GetNumGlyphs,
+	GetGlyphInfo       = glyphs.GetGlyphInfo,
+	IsGlyphKnown       = glyphs.IsGlyphKnown,
+	-- non character methods
+	GetGlyphLink       = glyphs.GetGlyphLink,
+	GetGlyphInfoByID   = glyphs.GetGlyphInfoByID,
 }
 
 function glyphs:OnInitialize()
@@ -200,27 +176,21 @@ function glyphs:OnInitialize()
 
 	DataStore:RegisterModule(self.name, self, PublicMethods, true)
 	for funcName, funcImpl in pairs(PublicMethods) do
-		if funcName ~= 'GetGlyphInfoByID' then
+		if funcName ~= 'GetGlyphLink' and funcName ~= 'GetGlyphInfoByID' then
 			DataStore:SetCharacterBasedMethod(funcName)
 		end
 	end
 end
 
 function glyphs:OnEnable()
-	self:RegisterEvent('PLAYER_LOGIN', function(...)
-		ScanGlyphs()
+	self:RegisterEvent('PLAYER_LOGIN', function(event)
 		ScanGlyphList()
+		self:UnregisterEvent(event)
 	end)
 	self:RegisterEvent('USE_GLYPH', ScanGlyphList)
-	self:RegisterEvent('GLYPH_ADDED',   ScanGlyphs)
-	self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
-	self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
 end
 
 function glyphs:OnDisable()
 	self:UnregisterEvent('PLAYER_LOGIN')
 	self:UnregisterEvent('USE_GLYPH')
-	self:UnregisterEvent('GLYPH_ADDED')
-	self:UnregisterEvent('GLYPH_REMOVED')
-	self:UnregisterEvent('GLYPH_UPDATED')
 end
