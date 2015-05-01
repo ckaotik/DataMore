@@ -22,6 +22,7 @@ local defaults = {
 		},
 		Characters = {
 			['*'] = {				-- ["Account.Realm.Name"]
+				lastUpdate = nil,
 				Mails = {
 					['*'] = {
 						sender = nil,
@@ -30,7 +31,6 @@ local defaults = {
 						stationery = DEFAULT_STATIONERY,
 						expires = 0,
 						status = STATUS_UNREAD,
-						lastUpdate = nil,
 
 						money = 0, -- x < 0: COD, x > 0: earned
 						attachments = {
@@ -42,7 +42,6 @@ local defaults = {
 						},
 					}
 				},
-				lastUpdate = nil,
 			}
 		}
 	}
@@ -171,7 +170,6 @@ local function ScanMail(index, ...)
 	mail.money = ((money and money > 0) and money) or ((CODAmount and CODAmount > 0) and -1*CODAmount) or 0
 	mail.expires = math.floor(time() + daysLeft*24*60*60)
 	mail.status = status
-	mail.lastUpdate = time()
 
 	mail.attachments = {}
 	for attachmentIndex = 1, isInbox and _G.ATTACHMENTS_MAX_RECEIVE or _G.ATTACHMENTS_MAX_SEND do
@@ -204,8 +202,7 @@ local function ScanInbox()
 		local mail = ScanMail(index)
 		table.insert(character.Mails, mail)
 	end
-
-	character.lastUpdate = time()
+	character.lastUpdate = #character.Mails > 0 and time() or nil
 end
 
 local function NotifyGuildMail(mail, player, recipientName)
