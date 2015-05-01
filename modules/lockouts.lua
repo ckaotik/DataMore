@@ -55,7 +55,11 @@ local function UpdateLFGStatus()
 				local _, reason, info1, info2 = GetLFDLockInfo(dungeonID, 1)
 				local status = string.format('%s:%s:%s', reason or '', info1 or '', info2 or '')
 				      status = strtrim(status, ':') -- trim trailing ::
-				lfgs[dungeonID] = tonumber(status) or status
+				      status = tonumber(status) or status
+				if status ~= 1 and status ~= 2 and status ~= 3 then
+					-- expansion and level requirements are infered using CheckDungeonRequirements
+					lfgs[dungeonID] = status
+				end
 			elseif completed == 0 and dungeonReset == 0 and numDefeated == 0 then
 				-- dungeon available but no lockout
 				-- lfgs[dungeonID] = 0
@@ -132,6 +136,28 @@ local function GetEncounters(defeatedBosses)
 	return unpack(encounters)
 end
 
+-- locked reasons: 1 (expansion), 2/1001 (low level), 3/1002 (high level), 4 (low gear), 5 (high gear)
+local function CheckDungeonRequirements(character, instanceID)
+	local status = nil
+	local _, _, _, minLevel, maxLevel, _, _, _, expansionLevel, groupID = GetLFGDungeonInfo(instanceID)
+	local characterKey = DataStore:GetCurrentCharacterKey()
+	local level = DataStore:GetCharacterLevel(characterKey)
+	-- TODO: only works when DataStore_Characters is enabled
+	if GetAccountExpansionLevel() < expansionLevel then
+		-- TODO: only works for default account
+		status = 1
+	elseif level and level < minLevel then
+		status = 2
+	elseif level and level > maxLevel then
+		status = 3
+	end
+
+	if status then
+		status = _G['INSTANCE_UNAVAILABLE_SELF_'..(LFG_INSTANCE_INVALID_CODES[lockedReason] or 'OTHER')]:format(reasonText)
+	end
+	return status
+end
+
 -- Mixins
 -- Looking for Group
 function lockouts.IterateLFGs(character, typeID, subTypeID)
@@ -162,7 +188,8 @@ end
 -- @return <bool:available|string:lockedReason>, <int:resetTime|nil>, <int:numDefeated|nil>, <int:numBosses|nil>
 function lockouts.GetLFGInfo(character, instanceID)
 	local instanceInfo = character.LFGs[instanceID]
-	if not instanceInfo then return end
+	-- no data saved, let's see if this dungeon might be accessible
+	if not instanceInfo then return CheckDungeonRequirements(character, instanceID) end
 
 	local lockCode = tonumber(instanceInfo)
 	if lockCode then
