@@ -89,13 +89,10 @@ local buildingNames = {
 -- buildings
 local function ScanPlot(plotID)
 	if not plotID then return end
-	local buildingID, name, texPath, icon, description, rank, currencyID, currencyQty, goldQty, _, needsPlan, _, _, upgrades, canUpgrade, isMaxLevel, hasFollowerSlot, _, _, _, isBeingBuilt, timeStarted, buildDuration, _, canActivate = C_Garrison.GetOwnedBuildingInfo(plotID)
+	local buildingID, name, texPath, icon, description, rank, currencyID, currencyQty, goldQty, _, needsPlan, _, _, upgrades, canUpgrade, isMaxLevel, hasFollowerSlot, _, _, _, isBeingBuilt, timeStarted, buildTime, _, canActivate = C_Garrison.GetOwnedBuildingInfo(plotID)
 	-- TODO: upgrades is not available unless on garrison map? weird...
 	local baseID = rank == 1 and buildingID or (upgrades and upgrades[1]) or nil
 	if not baseID then print('cannot find building base id', plotID, buildingID, upgrades, upgrades and upgrades[1]) return end
-	if isBeingBuilt then
-		print('is being built', baseID, buildingID, name, texPath, icon, description, rank, currencyID, currencyQty, goldQty, needsPlan, upgrades, canUpgrade, isMaxLevel, hasFollowerSlot, isBeingBuilt, timeStarted, buildDuration, canActivate)
-	end
 	local garrFollowerID = hasFollowerSlot and select(6, C_Garrison.GetFollowerInfoForBuilding(plotID))
 
 	garrison.ThisCharacter.Buildings[baseID] = garrison.ThisCharacter.Buildings[baseID] or {}
@@ -252,12 +249,12 @@ function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, succes
 		local duration      = select(5, C_Garrison.GetMissionTimes(missionID))
 		local startTime     = (self.ThisCharacter.Missions[missionID].timestamp or duration) - duration
 
-		local missionInfo = strjoin(':', startTime, time(), successChance, success and 1 or 0, followers, mission.durationSeconds/duration, goldBoost, resourceBoost)
+		local missionInfo = strjoin('|', startTime, time(), successChance, success and 1 or 0, followers, mission.durationSeconds/duration, goldBoost, resourceBoost)
 		self.ThisCharacter.MissionHistory[missionID] = self.ThisCharacter.MissionHistory[missionID] or {}
 		table.insert(self.ThisCharacter.MissionHistory[missionID], missionInfo)
 	end
 	-- remove mission from active list
-	self.ThisCharacter.MissionHistory[missionID] = nil
+	self.ThisCharacter.Missions[missionID] = nil
 end
 function garrison:GARRISON_MISSION_LIST_UPDATE(event, missionStarted)
 	-- started missions are already handled above
@@ -288,9 +285,11 @@ end
 
 function garrison.GetBuildingInfo(character, building)
 	local buildingID = type(building) == 'number' and building or nil
-	for id, name in pairs(buildingNames) do
-		if building == name then
-			buildingID = id; break
+	if not buildingID then
+		for id, name in pairs(buildingNames) do
+			if building == name then
+				buildingID = id break
+			end
 		end
 	end
 	if not buildingID then return end
