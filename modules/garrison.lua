@@ -267,6 +267,52 @@ end
 -- --------------------------------------------------------
 -- Mixins
 -- --------------------------------------------------------
+-- Mission History
+function garrison.GetNumHistoryMissions(character)
+	local numMissions = 0
+	for missionID, history in pairs(character.MissionHistory) do
+		numMissions = numMissions + 1
+	end
+	return numMissions
+end
+
+function garrison.IterateHistoryMissions(character)
+	local missions, missionID = character.MissionHistory, nil
+	return function()
+		missionID = next(missions, missionID)
+		if missionID then
+			return missionID, garrison.GetMissionHistorySize(character, missionID)
+		end
+	end
+end
+
+-- Mission History for a specific mission
+function garrison.GetMissionHistorySize(character, missionID)
+	local history = missionID and character.MissionHistory[missionID]
+	local numRecords = history and #history or 0
+	return numRecords
+end
+
+local followers = {}
+function garrison.GetMissionHistoryInfo(character, missionID, index)
+	local history = missionID and character.MissionHistory[missionID]
+	local data = history and history[index]
+	if not data then return end
+
+	local characterKey = DataStore:GetCurrentCharacterKey()
+	local startTime, collectTime, successChance, success, missionFollowers, speedFactor, goldFactor, resourceFactor = strsplit('|', data)
+
+	-- resolve followers
+	wipe(followers)
+	missionFollowers:gsub('[^:]+', function(followerID)
+		followerID = tonumber(followerID)
+		followers[followerID] = DataStore:GetFollowerLink(characterKey, followerID)
+	end)
+
+	return startTime, collectTime, successChance, success, followers, speedFactor, goldFactor, resourceFactor
+end
+
+-- Missions
 function garrison.GetMissionInfo(character, missionID)
 	-- local mission = character.Garrison.Missions[missionID]
 	local availableUntil, 	-- if available, expiry time, otherwise 0
@@ -343,14 +389,19 @@ end
 
 -- Setup
 local PublicMethods = {
-	GetMissionInfo   = garrison.GetMissionInfo,
+	-- Mission History
+	GetNumHistoryMissions  = garrison.GetNumHistoryMissions,
+	IterateHistoryMissions = garrison.IterateHistoryMissions,
+	GetMissionHistorySize  = garrison.GetMissionHistorySize,
+	GetMissionHistoryInfo  = garrison.GetMissionHistoryInfo,
+
+	--[[ GetMissionInfo   = garrison.GetMissionInfo,
 	IterateMissions  = garrison.IterateMissions,
 	GetBuildingInfo  = garrison.GetBuildingInfo,
 	IterateBuildings = garrison.IterateBuildings,
 	GetShipmentInfo  = garrison.GetShipmentInfo,
-	IterateShipments = garrison.IterateShipments,
+	IterateShipments = garrison.IterateShipments, --]]
 }
-PublicMethods = {} -- TODO: remove this line
 
 function garrison:OnEnable()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
