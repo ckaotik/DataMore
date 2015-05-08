@@ -19,7 +19,7 @@ local defaults = {
 						-- [socketID] = strjoin('|', glyphID, spellID),
 					},
 					specID = nil,
-					mastery = nil, -- GetSpecializationMasterySpells(specIndex)
+					mastery = nil,
 				},
 				activeSpecGroup = 1,
 				lastUpdate = nil,
@@ -118,6 +118,12 @@ function specializations.GetSpecializationMastery(character, specNum)
 	return specData.mastery
 end
 
+-- returns the currently active specialization group
+-- named for backwards compatibility
+function specializations.GetActiveTalents(character)
+	return character.activeSpecGroup
+end
+
 -- --------------------------------------------------------
 --  Glyphs
 -- --------------------------------------------------------
@@ -163,10 +169,6 @@ function specializations.GetTalentInfo(character, tier, specNum)
 	if talentID then
 		return GetTalentInfoByID(talentID)
 	end
-end
-
-function specializations.GetActiveTalents(character)
-	return character.activeSpecGroup
 end
 
 -- --------------------------------------------------------
