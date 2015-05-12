@@ -16,6 +16,20 @@ local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000,
 local friendshipStandings = { 0, 8400, 16800, 25200, 33600, 42000, 43000 }
 local friendStandingsTexts = {} -- filled on scan .. this sucks, see @TODO below
 
+local defaults = {
+	global = {
+		Characters = {
+			['*'] = {
+				lastUpdate = nil,
+				factions = '', -- holds the display order
+				reputations = { -- hold the faction's reputation standing
+					['*'] = 0
+				},
+			}
+		}
+	}
+}
+
 -- @TODO: fix Shlae'gar arena ranks
 
 -- --------------------------------------------------------
@@ -201,17 +215,7 @@ if not IsAddOnLoaded('DataStore_Reputations') then
 end
 
 function factions:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', {
-		global = {
-			Characters = {
-				['*'] = {
-					lastUpdate = nil,
-					factions = '', -- holds the display order
-					reputations = {}, -- hold the faction's reputaton standing
-				}
-			}
-		}
-	}, true)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods, true)
 	DataStore:SetCharacterBasedMethod('GetNumFactions')
