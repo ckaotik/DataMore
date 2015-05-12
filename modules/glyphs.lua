@@ -5,6 +5,7 @@ local glyphs = addon:NewModule('Glyphs', 'AceEvent-3.0')
 -- GLOBALS: UnitClass, GetItemInfo, GetNumSpecGroups, GetNumGlyphSockets, GetGlyphSocketInfo, GetNumGlyphs, GetGlyphInfo, ToggleGlyphFilter, IsGlyphFlagSet
 -- GLOBALS: wipe, type, strjoin, strsplit, tonumber, pairs, ipairs, time
 local tinsert, tsort = table.insert, table.sort
+local filters = {}
 
 local defaults = {
 	global = {
@@ -39,7 +40,14 @@ local glyphNameByID = setmetatable({}, {
 })
 
 -- scans which glyphs are known
-local filters = { _G.GLYPH_FILTER_KNOWN, _G.GLYPH_FILTER_UNKNOWN, _G.GLYPH_TYPE_MAJOR, _G.GLYPH_TYPE_MINOR }
+local GLYPH_FILTER_KNOWN   = _G.GLYPH_FILTER_KNOWN or 8
+local GLYPH_FILTER_UNKNOWN = _G.GLYPH_FILTER_UNKNOWN or 8
+local filters = {
+	[GLYPH_FILTER_KNOWN]   = true,
+	[GLYPH_FILTER_UNKNOWN] = true,
+	[_G.GLYPH_TYPE_MAJOR]  = true,
+	[_G.GLYPH_TYPE_MINOR]  = true,
+}
 local function ScanGlyphList()
 	-- Blizzard provides no GetGlyphInfo(glyphID) function so we need to store all this data ourselves
 	local data = glyphs.ThisCharacter
@@ -50,7 +58,8 @@ local function ScanGlyphList()
 	wipe(classGlyphs)
 
 	-- show all glyphs for scanning
-	for _, filter in pairs(filters) do
+	for filter, _ in pairs(filters) do
+		filters[filter] = IsGlyphFlagSet(filter)
 		if not IsGlyphFlagSet(filter) then
 			ToggleGlyphFilter(filter)
 		end
@@ -59,7 +68,6 @@ local function ScanGlyphList()
 	-- scan
 	for index = 1, GetNumGlyphs() do
 		local name, glyphType, isKnown, icon, glyphID, link, description = GetGlyphInfo(index)
-		local glyphData
 		if glyphID then
 			local texture = icon:sub(17) -- strip 'Interface\\Icons\\'
 			classGlyphs[index] = strjoin('|', glyphID, glyphType, texture, description)
@@ -68,13 +76,19 @@ local function ScanGlyphList()
 			classGlyphs[index] = strjoin('|', 0, glyphType)
 		end
 
-		-- not storing as bit map b/c when glyph list changes, als char data becomes invalid
+		-- not storing as bit map b/c when glyph list changes, char data becomes invalid
 		if glyphID and isKnown then
 			data.knownGlyphs[glyphID] = true
 		end
 	end
 
-	-- TODO: restore previous filters
+	-- restore previous filters
+	for filter, state in pairs(filters) do
+		if state ~= IsGlyphFlagSet(filter) then
+			ToggleGlyphFilter(filter)
+		end
+	end
+
 	data.lastUpdate = time()
 end
 
