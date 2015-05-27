@@ -80,7 +80,6 @@ local function UpdateLFGStatus()
 	lockouts.ThisCharacter.lastUpdate = time()
 end
 
--- TODO: this API is broken in WoD....
 local function UpdateSavedBosses()
 	local bosses = lockouts.ThisCharacter.WorldBosses
 	wipe(bosses)
@@ -348,6 +347,12 @@ function lockouts:OnInitialize()
 end
 
 function lockouts:OnEnable()
+	hooksecurefunc('BonusRollFrame_StartBonusRoll', function(spellID, text, duration, currencyID)
+		-- print('BonusRollFrame_StartBonusRoll', spellID, text, duration, currencyID)
+		-- BonusRollFrame_StartBonusRoll 178851 '' 179 994
+		RequestRaidInfo()
+	end)
+
 	self:RegisterEvent('LFG_LOCK_INFO_RECEIVED', UpdateLFGStatus)
 	self:RegisterEvent('UPDATE_INSTANCE_INFO', function()
 		UpdateSavedBosses()
