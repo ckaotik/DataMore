@@ -144,15 +144,18 @@ local function ScanShipmentLoot(event)
 	local source = GetLootSourceInfo(1)
 	local guidType, _, _, _, _, id = strsplit('-', source)
 	if guidType == 'GameObject' then
+		local buildingID = objectMap[id * 1]
+		if not buildingID then return end
 		C_Garrison.RequestLandingPageShipmentInfo()
-		garrison:SendMessage('DATAMORE_GARRISON_SHIPMENT_COLLECTED', objectMap[id * 1])
+		garrison:SendMessage('DATAMORE_GARRISON_SHIPMENT_COLLECTED', buildingID)
 	end
 end
 
 -- landing page updates with a slight delay
 function garrison:SHIPMENT_CRAFTER_INFO(event, success, numActive, capacity, plotID)
 	if success == 1 then C_Garrison.RequestLandingPageShipmentInfo() end
-	self:UnregisterEvent(event)
+	self:UnregisterEvent('SHIPMENT_CRAFTER_INFO')
+	self:UnregisterEvent('SHIPMENT_CRAFTER_CLOSED')
 end
 
 -- buildings
@@ -655,7 +658,9 @@ function garrison:OnEnable()
 	self:RegisterEvent('LOOT_READY', ScanShipmentLoot)
 	self:RegisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS', ScanShipments)
 	hooksecurefunc(C_Garrison, 'RequestShipmentCreation', function(numShipments)
-		self:RegisterEvent('SHIPMENT_CRAFTER_INFO') -- only registered on demand
+		-- events are only registered on demand
+		self:RegisterEvent('SHIPMENT_CRAFTER_INFO')
+		self:RegisterEvent('SHIPMENT_CRAFTER_CLOSED', garrison.SHIPMENT_CRAFTER_INFO, self)
 	end)
 
 	-- missions
@@ -710,4 +715,5 @@ function garrison:OnDisable()
 	self:UnregisterEvent('LOOT_READY')
 	self:UnregisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS')
 	self:UnregisterEvent('SHIPMENT_CRAFTER_INFO')
+	self:UnregisterEvent('SHIPMENT_CRAFTER_CLOSED')
 end
