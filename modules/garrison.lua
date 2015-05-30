@@ -245,7 +245,7 @@ local function ScanMission(missionID)
 	local timestamp, followers
 
 	if mission.state == -2 then     -- available
-		timestamp = math.floor(time() + mission.offerEndTime + 0.5)
+		timestamp = math.floor(time() + (mission.offerEndTime or 24*60*60) + 0.5)
 	elseif mission.state == -1 then -- active
 		timestamp = time() + select(5, C_Garrison.GetMissionTimes(missionID))
 
