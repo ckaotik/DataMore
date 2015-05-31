@@ -112,11 +112,12 @@ function factions.GetReputationStanding(reputation)
 			break
 		end
 	end
-	return standingID, standingLabel, standingLow or 0, standingHigh or standingLow or 0
+	return standingID, standingLabel, standingLow or 0, standingHigh or standingLow or 1
 end
 
 function factions.GetStanding(reputation, factionID)
-	local _, _, _, _, _, _, _, _, isHeader, _, hasRep = GetFactionInfoByID(factionID)
+	local name, _, _, _, _, _, _, _, isHeader, _, hasRep = GetFactionInfoByID(factionID)
+	if not name then return 0, _G.FACTION_STANDING_LABEL1, 0, 1 end
 	if isHeader and not hasRep then return end
 
 	if GetFriendshipReputation(factionID) then
@@ -137,8 +138,6 @@ end
 -- /spew DataStore:GetFactionInfo("Default.Die Aldor.Nemia", 2)
 function factions.GetFactionInfoByID(character, factionID)
 	local reputation = character.reputations[factionID]
-	if not reputation then return end
-
 	local standingID, standingText, low, high = factions.GetStanding(reputation, factionID)
 	return factionID, reputation, standingID, standingText, low, high
 end
@@ -157,6 +156,13 @@ function factions.GetFactionInfoByName(character, factionName)
 			return factions.GetFactionInfoByID(character, factionID)
 		end
 	end
+	return 0, 0, 0, _G.FACTION_STANDING_LABEL1, 0, 1
+end
+
+function factions.GetFactionName(dsID)
+	-- TODO: map DataStore_Reputations faction id to Blizzard faction id
+	-- TODO: fix GetFactionInfo() not working on foreign factions
+	return dsID
 end
 
 function factions.GetFactionInfoGuild(character)
@@ -174,6 +180,7 @@ local PublicMethods = {
 	GetFactionInfoByName  = factions.GetFactionInfoByName,
 	GetFactionInfoByID    = factions.GetFactionInfoByID,
 	GetFactionInfo        = factions.GetFactionInfo,
+	GetFactionName        = factions.GetFactionName,
 }
 
 -- legacy compatibility with DataStore_Reputations
