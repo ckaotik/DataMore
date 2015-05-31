@@ -362,7 +362,7 @@ function garrison.GetUncollectedResources(character)
 	if not timestamp then return 0 end
 
 	-- cache generates 1 resource per 10 minutes
-	local resources = (timestamp - time())/(10*60)
+	local resources = math.floor((timestamp - time())/(10*60))
 	return math.min(500, resources)
 end
 
