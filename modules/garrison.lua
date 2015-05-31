@@ -3,6 +3,7 @@ local garrison = addon:NewModule('Garrison', 'AceEvent-3.0')
 
 -- TODO: store invasions & history
 -- TODO: store mission basic data (icon, ...)
+-- TODO: option for strict comparison on follower counts (==, not >=)
 
 -- GLOBALS: _G, LibStub, DataStore, C_Garrison
 -- GLOBALS: wipe, pairs, ipairs, next, strsplit, strjoin, time
@@ -10,6 +11,7 @@ local GARRISON_MAX_BUILDING_LEVEL = _G.GARRISON_MAX_BUILDING_LEVEL or 3 -- only 
 local GARRISON_FOLLOWER_MAX_LEVEL = _G.GARRISON_FOLLOWER_MAX_LEVEL or GetMaxPlayerLevel()
 local GARRISON_FOLLOWER_MAX_UPGRADE_QUALITY = _G.GARRISON_FOLLOWER_MAX_UPGRADE_QUALITY or _G.LE_ITEM_QUALITY_EPIC
 local returnTable = {}
+local followers = {}
 
 local defaults = {
 	global = {
@@ -25,7 +27,7 @@ local defaults = {
 					['*'] = '', -- capacity|completed|queued|nextBatch
 				},
 				Followers = { -- keyed by garrFollowerID, usable in *ByID(garrFollowerID) functions
-					['*'] = '', -- followerLink
+					['*'] = '', -- followerData|isInactive|currentXP
 				},
 				Missions = { -- keyed by missionID
 					['*'] = '', -- completion/expiry timestamp|follower:follower:follower
@@ -245,25 +247,34 @@ end
 local function ScanMission(missionID)
 	if not missionID then return end
 	local mission = C_Garrison.GetBasicMissionInfo(missionID)
+	local successChance = C_Garrison.GetRewardChance(missionID) -- base -or- actual chance
 	local timestamp, followers
 
 	if mission.state == -2 then     -- available
 		timestamp = math.floor(time() + (mission.offerEndTime or 24*60*60) + 0.5)
 	elseif mission.state == -1 then -- active
 		timestamp = time() + select(5, C_Garrison.GetMissionTimes(missionID))
-
 		for _, followerID in ipairs(mission.followers) do
 			local followerLink   = C_Garrison.GetFollowerLink(followerID)
 			local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
 			followers = (followers and followers..':' or '') .. garrFollowerID
 		end
 	end
-	garrison.ThisCharacter.Missions[missionID] = followers and strjoin('|', timestamp, followers) or timestamp
+	local missionInfo = strjoin('|', timestamp, successChance, followers or '')
+	garrison.ThisCharacter.Missions[missionID] = strtrim(missionInfo, '|')
+end
+
+local function IsActiveMission(mission)
+	if type(mission) == 'number' then
+		mission = garrison.ThisCharacter.Missions[mission]
+	end
+	local timestamp, successChance, followers = strsplit('|', mission or '')
+	return followers and followers ~= ''
 end
 
 local function ScanMissions()
 	for missionID, info in pairs(garrison.ThisCharacter.Missions) do
-		if type(info) == 'number' then
+		if not IsActiveMission(info) then
 			garrison.ThisCharacter.Missions[missionID] = nil
 		end
 	end
@@ -277,7 +288,7 @@ function garrison:GARRISON_MISSION_NPC_OPENED(event)
 	wipe(returnTable)
 	C_Garrison.GetInProgressMissions(returnTable)
 	for missionID, missionInfo in pairs(self.ThisCharacter.Missions) do
-		if type(missionInfo) == 'string' then
+		if IsActiveMission(missionInfo) then
 			local exists = false
 			for _, mission in pairs(returnTable) do
 				exists = mission.missionID == missionID
@@ -355,6 +366,41 @@ function garrison.GetMissionTableLastVisit(character)
 end
 
 -- Followers
+function garrison.GetFollowerIDByName(followerName)
+	-- first, scan all collected followers
+	for characterKey, data in pairs(garrison.db.global.Characters) do
+		for garrFollowerID in pairs(data.Followers) do
+			if C_Garrison.GetFollowerNameByID(garrFollowerID) == followerName then
+				return garrFollowerID
+			end
+		end
+	end
+	-- follower is not collected, is it a basic follower?
+	for _, follower in pairs(C_Garrison.GetFollowers()) do
+		if follower.name == followerName then
+			return follower.garrFollowerID or follower.followerID
+		end
+	end
+end
+
+function garrison.GetFollowers(character)
+	wipe(returnTable)
+	for garrFollowerID, followerData in pairs(character.Followers) do
+		local linkData, inactive, xp = strsplit('|', followerData)
+		local _, quality, level = strsplit(':', linkData)
+		local levelXP = level == GARRISON_FOLLOWER_MAX_LEVEL
+			and C_Garrison.GetFollowerQualityTable()[quality]
+			or C_Garrison.GetFollowerXPTable()[level]
+		returnTable[garrFollowerID] = {
+			isInactive = inactive == '1',
+			link    = garrison.GetFollowerLink(character, garrFollowerID),
+			xp      = xp,
+			levelXP = 0,
+		}
+	end
+	return returnTable
+end
+
 function garrison.GetFollowerInfo(character, garrFollowerID)
 	local followerData = character.Followers[garrFollowerID]
 	if not followerData then return end
@@ -380,45 +426,109 @@ function garrison.GetFollowerLink(character, garrFollowerID)
 	return link
 end
 
-function garrison.GetNumFollowers(character)
-	local count = 0
-	for garrFollowerID in pairs(character.Followers) do
-		count = count + 1
-	end
-	return count
-end
-
-function garrison.GetNumFollowersWithItemLevel(character, iLevel)
+function garrison.GetNumFollowers(character, excludeInactive)
 	local count = 0
 	for garrFollowerID, followerData in pairs(character.Followers) do
-		local equipLevel = followerData:match('.-:.-:.-:(.-):')
-		if tonumber(equipLevel or '') >= iLevel then
+		local _, inactive = strsplit('|', followerData)
+		if not excludeInactive or inactive == '0' then
 			count = count + 1
 		end
 	end
 	return count
 end
 
-function garrison.GetNumFollowersWithLevel(character, level)
+function garrison.GetNumFollowersWithItemLevel(character, iLevel, includeInactive)
 	local count = 0
 	for garrFollowerID, followerData in pairs(character.Followers) do
-		local charLevel = followerData:match('.-:.-:(.-):')
-		if tonumber(charLevel or '') >= level then
+		local linkData, inactive = strsplit('|', followerData)
+		local equipLevel = linkData:match('.-:.-:.-:(.-):')
+		if (includeInactive or inactive == '0') and tonumber(equipLevel or '') >= iLevel then
 			count = count + 1
 		end
 	end
 	return count
 end
 
-function garrison.GetNumFollowersWithQuality(character, quality)
+function garrison.GetNumFollowersWithLevel(character, level, includeInactive)
 	local count = 0
 	for garrFollowerID, followerData in pairs(character.Followers) do
-		local followerQuality = followerData:match('.-:(.-):')
-		if tonumber(followerQuality or '') >= quality then
+		local linkData, inactive = strsplit('|', followerData)
+		local charLevel = linkData:match('.-:.-:(.-):')
+		if (includeInactive or inactive == '0') and tonumber(charLevel or '') >= level then
 			count = count + 1
 		end
 	end
 	return count
+end
+
+function garrison.GetNumFollowersWithQuality(character, quality, includeInactive)
+	local count = 0
+	for garrFollowerID, followerData in pairs(character.Followers) do
+		local linkData, inactive = strsplit('|', followerData)
+		local followerQuality = linkData:match('.-:(.-):')
+		if (includeInactive or inactive == '0') and tonumber(followerQuality or '') >= quality then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+local function SkillInList(skillID, ...)
+	for i = 1, select('#', ...) do
+		local id = (select(i, ...))*1
+		if id > 0 and id == skillID then
+			return true
+		end
+	end
+end
+function garrison.GetNumFollowersWithSkill(character, skillID, includeInactive)
+	local count = 0
+	for garrFollowerID, followerData in pairs(character.Followers) do
+		local linkData, inactive = strsplit('|', followerData)
+		local _, _, _, _, skill1, skill2, skill3, skill4, trait1, trait2, trait3, trait4 = strsplit(':', linkData)
+		if (includeInactive or inactive == '0') and SkillInList(skillID, skill1, skill2, skill3, skill4, trait1, trait2, trait3, trait4) then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+local function CounterInList(threatID, ...)
+	for i = 1, select('#', ...) do
+		local skillID = (select(i, ...))*1
+		local skillCounter = skillID > 0 and C_Garrison.GetFollowerAbilityCounterMechanicInfo(skillID) or nil
+		if skillCounter and skillCounter == threatID then
+			return true
+		end
+	end
+end
+function garrison.GetNumFollowersWithCounter(character, threatID, includeInactive)
+	local count = 0
+	for garrFollowerID, followerData in pairs(character.Followers) do
+		local linkData, inactive = strsplit('|', followerData)
+		local _, _, _, _, skill1, skill2, skill3, skill4, trait1, trait2, trait3, trait4 = strsplit(':', linkData)
+		if (includeInactive or inactive == '0') and CounterInList(threatID, skill1, skill2, skill3, skill4, trait1, trait2, trait3, trait4) then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+function garrison.GetFollowersAverageItemLevel(character, includeInactive)
+	local itemLevels, numFollowers = 0, 0
+	for garrFollowerID, followerData in pairs(character.Followers) do
+		local linkData, inactive = strsplit('|', followerData)
+		local _, _, level, iLevel = strsplit(':', linkData, 5)
+		if (includeInactive or inactive == '0') and level == GARRISON_FOLLOWER_MAX_LEVEL then
+			itemLevels = itemLevels + iLevel
+			numFollowers = numFollowers + 1
+		end
+	end
+	if numFollowers == 0 then
+		itemLevels = 600
+		numFollowers = 1
+	end
+	return itemLevels/numFollowers
 end
 
 -- Mission History
@@ -447,7 +557,6 @@ function garrison.GetMissionHistorySize(character, missionID)
 	return numRecords
 end
 
-local followers = {}
 function garrison.GetMissionHistoryInfo(character, missionID, index)
 	local history = missionID and character.MissionHistory[missionID]
 	local data = history and history[index]
@@ -467,32 +576,56 @@ function garrison.GetMissionHistoryInfo(character, missionID, index)
 end
 
 -- Missions
+-- TODO: this needs lots of love
+-- returns static, non character-based mission data
+function garrison.GetBasicMissionInfo(missionID)
+	-- DataStore_Garrisons: missionType, typeAtlas, level, ilevel, cost, duration
+	-- Blizzard: type, typeAtlas, level, ilevel, cost, durationSeconds, isRare, location, locPrefix, description, offerEndTime
+	-- name = C_Garrison.GetMissionName(missionID)
+	-- numFollowers = C_Garrison.GetMissionMaxFollowers(missionID)
+	-- rewards = C_Garrison.GetMissionRewardInfo(missionID) -- also implies numRewards
+
+	local missionType, typeAtlas, level, ilevel, cost, duration -- = "Kampf", "GarrMission_MissionIcon-Combat", 100, 675, 25, 36000
+
+	return missionType, typeAtlas, level, ilevel, cost, duration
+end
+
+function garrison.GetMissionInfo(character, missionID)
+	local missionInfo = character.Missions[missionID]
+	if not missionInfo then return end
+	local timestamp, successChance, missionFollowers = strsplit('|', missionInfo)
+	local remainingTime = timestamp - time()
+	if remainingTime < 0 then remainingTime = 0 end
+	missionFollowers = missionFollowers or ''
+
+	-- resolve followers
+	wipe(followers)
+	missionFollowers:gsub('[^:]+', function(followerID)
+		tinsert(followers, followerID*1)
+	end)
+
+	local missionType, typeAtlas, level, ilevel, cost, duration = garrison.GetBasicMissionInfo(missionID)
+	return missionType, typeAtlas, level, ilevel, cost, duration, followers, remainingTime, successChance
+end
+
 function garrison.GetGarrisonMissionExpiry(character, missionID)
 	local mission = character.Missions[missionID]
 	local expires = strsplit('|', mission)
 	return expires*1
 end
 
---[[ function garrison.GetMissionInfo(character, missionID)
-	-- local mission = character.Missions[missionID]
-	local availableUntil, 	-- if available, expiry time, otherwise 0
-		  lastStarted		-- when was the mission last started
-	return availableUntil, lastStarted
-	-- "Kampf", "GarrMission_MissionIcon-Combat", 100, 675, 25, 36000, {1 = 216, 2=, 3=}, 1234, 100
-	return missionType, typeAtlas, level, ilevel, cost, duration, followers, remainingTime, successChance
-end --]]
-
 function garrison.GetMissions(character, scope)
 	wipe(returnTable)
 	for missionID, missionInfo in pairs(character.Missions) do
 		local matches, expires = not scope, nil
+		local isActive = IsActiveMission(missionInfo)
 		if scope == 'available' then
-			matches = type(missionInfo) == 'number'
+			matches = not isActive
 		elseif scope == 'active' then
-			matches = type(missionInfo) == 'string'
+			matches = isActive
 		elseif scope == 'completed' then
 			expires = garrison.GetGarrisonMissionExpiry(character, missionID)
-			matches = type(missionInfo) == 'string' and expires <= time()
+			matches = isActive and expires <= time()
 		end
 
 		if matches then
@@ -598,15 +731,20 @@ end
 
 -- Setup
 local PublicMethods = {
+	-- non character-based data
+	GetBasicMissionInfo = garrison.GetBasicMissionInfo,
+	-- GetFollowers = garrison.GetFollowers,
+	-- GetFollowerID = garrison.GetFollowerIDByName,
+
 	-- Buildings
+	IteratePlots     = garrison.IteratePlots,
 	GetPlotInfo      = garrison.GetPlotInfo,
 	-- GetBuildingInfo  = garrison.GetBuildingInfo,
-	IteratePlots     = garrison.IteratePlots,
 	-- Shipments
 	GetShipmentInfo  = garrison.GetShipmentInfo,
 	IterateShipments = garrison.IterateShipments,
 	-- Missions
-	-- GetMissionInfo   = garrison.GetMissionInfo,
+	GetMissionInfo   = garrison.GetMissionInfo,
 	-- GetActiveMissionInfo       = garrison.GetMissionInfo,
 	-- GetAvailableMissionInfo    = garrison.GetMissionInfo,
 	GetGarrisonMissionExpiry = garrison.GetGarrisonMissionExpiry,
@@ -621,19 +759,22 @@ local PublicMethods = {
 	-- GetFollowerInfo = garrison.GetFollowerInfo,
 	-- GetFollowerLink = garrison.GetFollowerLink,
 	-- GetNumFollowers = garrison.GetNumFollowers,
+	GetFollowersAverageItemLevel = garrison.GetFollowersAverageItemLevel,
 	GetNumFollowersWithLevel     = garrison.GetNumFollowersWithLevel,
 	GetNumFollowersWithItemLevel = garrison.GetNumFollowersWithItemLevel,
 	GetNumFollowersWithQuality   = garrison.GetNumFollowersWithQuality,
+	GetNumFollowersWithSkill     = garrison.GetNumFollowersWithSkill,
+	GetNumFollowersWithCounter   = garrison.GetNumFollowersWithCounter,
 
 	-- compatibility with DataStore_Garrisons
 	-- GetUncollectedResources       = garrison.GetUncollectedResources,
 	-- GetLastResourceCollectionTime = garrison.GetLastResourceCollectionTime,
 	-- GetMissionTableLastVisit   = garrison.GetMissionTableLastVisit,
-	-- GetAvailableMissions  = function(char) return garrison.GetMissions(char, 'available') end,
-	-- GetActiveMissions     = function(char) return garrison.GetMissions(char, 'active') end,
-	-- GetNumActiveMissions    = function(char) return garrison.GetNumMissions(char, 'active') end,
-	-- GetNumAvailableMissions = function(char) return garrison.GetNumMissions(char, 'available') end,
-	-- GetNumCompletedMissions = function(char) return garrison.GetNumMissions(char, 'completed') end,
+	-- GetAvailableMissions       = function(char) return garrison.GetMissions(char, 'available') end,
+	-- GetActiveMissions          = function(char) return garrison.GetMissions(char, 'active') end,
+	-- GetNumActiveMissions       = function(char) return garrison.GetNumMissions(char, 'active') end,
+	-- GetNumAvailableMissions    = function(char) return garrison.GetNumMissions(char, 'available') end,
+	-- GetNumCompletedMissions    = function(char) return garrison.GetNumMissions(char, 'completed') end,
 	-- GetNumFollowersAtLevel100  = function(char) return garrison.GetNumFollowersWithLevel(char, 100) end,
 	-- GetNumFollowersAtiLevel615 = function(char) return garrison.GetNumFollowersWithItemLevel(char, 615) end,
 	-- GetNumFollowersAtiLevel630 = function(char) return garrison.GetNumFollowersWithItemLevel(char, 630) end,
@@ -642,14 +783,9 @@ local PublicMethods = {
 	-- GetNumFollowersAtiLevel675 = function(char) return garrison.GetNumFollowersWithItemLevel(char, 675) end,
 	-- GetNumRareFollowers        = function(char) return garrison.GetNumFollowersWithQuality(char, 2) end,
 	-- GetNumEpicFollowers        = function(char) return garrison.GetNumFollowersWithQuality(char, 3) end,
-
-	--[[
-	-- GetFollowerID = _GetFollowerID, -- non-char data
-	GetFollowers = _GetFollowers,
-	GetFollowerSpellCounters = _GetFollowerSpellCounters,
-	GetAvgWeaponiLevel = _GetAvgWeaponiLevel,
-	GetAvgArmoriLevel = _GetAvgArmoriLevel,
-	--]]
+	-- GetAvgWeaponiLevel         = function(char) return garrison.GetFollowersAverageItemLevel(char) end,
+	-- GetAvgArmoriLevel          = function(char) return garrison.GetFollowersAverageItemLevel(char) end,
+	-- GetFollowerSpellCounters = function(char, spellType, id) return garrison[spellType == 'AbilityCounters' and 'GetNumFollowersWithCounter' or 'GetNumFollowersWithSkill'](char, id) end,
 }
 
 function garrison:OnEnable()
@@ -657,7 +793,9 @@ function garrison:OnEnable()
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	for methodName in pairs(PublicMethods) do
-		DataStore:SetCharacterBasedMethod(methodName)
+		if methodName ~= 'GetBasicMissionInfo' then
+			DataStore:SetCharacterBasedMethod(methodName)
+		end
 	end
 
 	-- resources
