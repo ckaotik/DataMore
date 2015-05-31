@@ -35,8 +35,11 @@ local defaults = {
 						-- string: 'start:end:chance:success:follower1:follower2:follower3:speedFactor:goldFactor:resourceFactor'
 					},
 				},
-			}
-		}
+			},
+		},
+		MissionInfo = { -- keyed by missionID
+			['*'] = '',
+		},
 	},
 }
 
@@ -521,32 +524,44 @@ function garrison.GetNumMissions(character, scope)
 	return count
 end
 
---[[ function garrison.GetBuildingInfo(character, building)
-	if not buildingID then return end
-	local buildingID = type(building) == 'number' and building or buildingMap[building]
-	if not buildingID then return end
+-- Plots and Buildings
+function garrison.GetPlotInfo(character, plotID)
+	local data = plotID and character.Plots[plotID] or nil
+	if not data then return end
 
-	local completes 		-- timestamp when building can be activated or nil if completely built
-	local buildingID, rank
-	return buildingID, rank
+	local buildingID, rank, upgradeInfo, followerID = strsplit('|', data)
+	buildingID  = buildingID ~= '' and buildingID*1 or nil
+	rank        = buildingID and rank*1 or nil
+	followerID  = followerID and followerID*1 or nil
+	upgradeInfo = upgradeInfo and upgradeInfo*1 or nil
+
+	local completes  = upgradeInfo > 1 and upgradeInfo or nil
+	local canUpgrade = upgradeInfo == 1
+	return plotID, buildingID, rank, followerID, canUpgrade, completes
 end
 
-function garrison.IterateBuildings(character)
-	local builds, buildingID = character.Garrison.Buildings, nil
-	return function()
-		buildingID = next(builds, buildingID)
-		return buildingID, garrison.GetBuildInfo(character, buildingID)
-	end
-end --]]
---[[ needs to replace
-function timers.IterateGarrisonBuilds(character)
-	local builds, buildingID = character.Garrison.Buildings, nil
-	return function()
-		buildingID = next(builds, buildingID)
-		return buildingID, timers.GetGarrisonBuildExpiry(character, buildingID)
+function garrison.GetBuildingInfo(character, building)
+	building = type(building) == 'number' and building or buildingMap[building]
+	if not building then return end
+	for plotID in pairs(character.Plots) do
+		local _, _, buildingID, rank, followerID, canUpgrade, completes = garrison.GetPlotInfo(character, plotID)
+		if buildingID == building then
+			return buildingID, rank, followerID, canUpgrade, completes
+		end
 	end
 end
---]]
+
+function garrison.IteratePlots(character, includeEmpty)
+	local plots, key = character.Plots, nil
+	return function()
+		local buildingID, rank, completes, followerID, canUpgrade
+		repeat
+			key = next(plots, key)
+			plotID, buildingID, rank, followerID, canUpgrade, completes = garrison.GetPlotInfo(character, key)
+		until not plotID or buildingID or includeEmpty
+		return plotID, buildingID, rank, followerID, canUpgrade, completes
+	end
+end
 
 -- takes a building name or buildingID
 function garrison.GetShipmentInfo(character, building)
@@ -584,18 +599,19 @@ end
 -- Setup
 local PublicMethods = {
 	-- Buildings
+	GetPlotInfo      = garrison.GetPlotInfo,
 	-- GetBuildingInfo  = garrison.GetBuildingInfo,
-	-- IterateBuildings = garrison.IterateBuildings,
+	IteratePlots     = garrison.IteratePlots,
 	-- Shipments
 	GetShipmentInfo  = garrison.GetShipmentInfo,
 	IterateShipments = garrison.IterateShipments,
 	-- Missions
 	-- GetMissionInfo   = garrison.GetMissionInfo,
+	-- GetActiveMissionInfo       = garrison.GetMissionInfo,
+	-- GetAvailableMissionInfo    = garrison.GetMissionInfo,
 	GetGarrisonMissionExpiry = garrison.GetGarrisonMissionExpiry,
 	GetMissions              = garrison.GetMissions,
 	GetNumMissions           = garrison.GetNumMissions,
-	-- GetAvailableMissions  = function(char) return garrison.GetMissions(char, 'available') end,
-	-- GetActiveMissions     = function(char) return garrison.GetMissions(char, 'active') end,
 	-- Mission History
 	GetNumHistoryMissions  = garrison.GetNumHistoryMissions,
 	IterateHistoryMissions = garrison.IterateHistoryMissions,
@@ -604,7 +620,7 @@ local PublicMethods = {
 	-- Followers
 	-- GetFollowerInfo = garrison.GetFollowerInfo,
 	-- GetFollowerLink = garrison.GetFollowerLink,
-	-- GetNumFollowers              = garrison.GetNumFollowers,
+	-- GetNumFollowers = garrison.GetNumFollowers,
 	GetNumFollowersWithLevel     = garrison.GetNumFollowersWithLevel,
 	GetNumFollowersWithItemLevel = garrison.GetNumFollowersWithItemLevel,
 	GetNumFollowersWithQuality   = garrison.GetNumFollowersWithQuality,
@@ -613,8 +629,8 @@ local PublicMethods = {
 	-- GetUncollectedResources       = garrison.GetUncollectedResources,
 	-- GetLastResourceCollectionTime = garrison.GetLastResourceCollectionTime,
 	-- GetMissionTableLastVisit   = garrison.GetMissionTableLastVisit,
-	-- GetActiveMissionInfo       = garrison.GetMissionInfo,
-	-- GetAvailableMissionInfo    = garrison.GetMissionInfo,
+	-- GetAvailableMissions  = function(char) return garrison.GetMissions(char, 'available') end,
+	-- GetActiveMissions     = function(char) return garrison.GetMissions(char, 'active') end,
 	-- GetNumActiveMissions    = function(char) return garrison.GetNumMissions(char, 'active') end,
 	-- GetNumAvailableMissions = function(char) return garrison.GetNumMissions(char, 'available') end,
 	-- GetNumCompletedMissions = function(char) return garrison.GetNumMissions(char, 'completed') end,
