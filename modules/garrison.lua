@@ -39,7 +39,7 @@ local defaults = {
 				},
 			},
 		},
-		MissionInfo = { -- keyed by missionID
+		Missions = { -- keyed by missionID
 			['*'] = '',
 		},
 	},
@@ -262,6 +262,11 @@ local function ScanMission(missionID)
 	end
 	local missionInfo = strjoin('|', timestamp, successChance, followers or '')
 	garrison.ThisCharacter.Missions[missionID] = strtrim(missionInfo, '|')
+
+	-- store general information about this mission not available via C_Garrison API
+	-- name: .GetMissionName, numFollowers: .GetMissionMaxFollowers, rewards: .GetMissionRewardInfo
+	local missionInfo = strjoin('|', mission.type, mission.location, mission.level, mission.iLevel, mission.durationSeconds, mission.isRare and 1 or 0, mission.cost, mission.typeAtlas, mission.locPrefix)
+	garrison.db.global.Missions[missionID] = strtrim(missionInfo, '|')
 end
 
 local function IsActiveMission(mission)
@@ -397,6 +402,17 @@ function garrison.GetFollowers(character)
 			xp      = xp,
 			levelXP = 0,
 		}
+	end
+	return returnTable
+end
+
+function garrison.GetFollowerIDs(character, includeInactive)
+	wipe(returnTable)
+	for garrFollowerID, followerData in pairs(character.Followers) do
+		local _, inactive = strsplit('|', followerData)
+		if includeInactive or inactive == '0' then
+			tinsert(returnTable, garrFollowerID)
+		end
 	end
 	return returnTable
 end
@@ -576,18 +592,13 @@ function garrison.GetMissionHistoryInfo(character, missionID, index)
 end
 
 -- Missions
--- TODO: this needs lots of love
 -- returns static, non character-based mission data
 function garrison.GetBasicMissionInfo(missionID)
-	-- DataStore_Garrisons: missionType, typeAtlas, level, ilevel, cost, duration
-	-- Blizzard: type, typeAtlas, level, ilevel, cost, durationSeconds, isRare, location, locPrefix, description, offerEndTime
-	-- name = C_Garrison.GetMissionName(missionID)
-	-- numFollowers = C_Garrison.GetMissionMaxFollowers(missionID)
-	-- rewards = C_Garrison.GetMissionRewardInfo(missionID) -- also implies numRewards
+	local missionInfo = missionID and garrison.db.Missions[missionID]
+	if not missionInfo then return end
 
-	local missionType, typeAtlas, level, ilevel, cost, duration -- = "Kampf", "GarrMission_MissionIcon-Combat", 100, 675, 25, 36000
-
-	return missionType, typeAtlas, level, ilevel, cost, duration
+	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
+	return missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare == '1' and true or false, locPrefix, location
 end
 
 function garrison.GetMissionInfo(character, missionID)
@@ -733,7 +744,6 @@ end
 local PublicMethods = {
 	-- non character-based data
 	GetBasicMissionInfo = garrison.GetBasicMissionInfo,
-	-- GetFollowers = garrison.GetFollowers,
 	-- GetFollowerID = garrison.GetFollowerIDByName,
 
 	-- Buildings
@@ -756,6 +766,8 @@ local PublicMethods = {
 	GetMissionHistorySize  = garrison.GetMissionHistorySize,
 	GetMissionHistoryInfo  = garrison.GetMissionHistoryInfo,
 	-- Followers
+	-- GetFollowers = garrison.GetFollowers,
+	GetFollowerIDs  = garrison.GetFollowerIDs,
 	-- GetFollowerInfo = garrison.GetFollowerInfo,
 	-- GetFollowerLink = garrison.GetFollowerLink,
 	-- GetNumFollowers = garrison.GetNumFollowers,
@@ -767,8 +779,8 @@ local PublicMethods = {
 	GetNumFollowersWithCounter   = garrison.GetNumFollowersWithCounter,
 
 	-- compatibility with DataStore_Garrisons
-	-- GetUncollectedResources       = garrison.GetUncollectedResources,
 	-- GetLastResourceCollectionTime = garrison.GetLastResourceCollectionTime,
+	-- GetUncollectedResources    = garrison.GetUncollectedResources,
 	-- GetMissionTableLastVisit   = garrison.GetMissionTableLastVisit,
 	-- GetAvailableMissions       = function(char) return garrison.GetMissions(char, 'available') end,
 	-- GetActiveMissions          = function(char) return garrison.GetMissions(char, 'active') end,
@@ -793,7 +805,7 @@ function garrison:OnEnable()
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	for methodName in pairs(PublicMethods) do
-		if methodName ~= 'GetBasicMissionInfo' then
+		if methodName ~= 'GetBasicMissionInfo' and methodName ~= 'GetFollowerID' then
 			DataStore:SetCharacterBasedMethod(methodName)
 		end
 	end
