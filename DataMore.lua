@@ -1,9 +1,25 @@
 local addonName, addon = ...
-LibStub('AceAddon-3.0'):NewAddon(addon, addonName)
+LibStub('AceAddon-3.0'):NewAddon(addon, addonName, 'AceEvent-3.0')
 _G[addonName] = addon -- expose us
 
 -- GLOBALS: GetCVar, GetQuestResetTime
 -- GLOBALS: assert ,format, pairs, string, time, date, tonumber, type
+
+local function EnableGrids()
+	if not IsAddOnLoaded('Altoholic_Grids') then return end
+	hooksecurefunc(Altoholic.Tabs.Grids, 'OnShow', function()
+		local children = { _G.AltoholicTabGrids:GetChildren() }
+		for i, child in ipairs(children) do
+			if child:GetObjectType() == 'Button' then
+				child:Enable()
+				child.Icon:SetDesaturated(false)
+			end
+		end
+	end)
+	addon:UnregisterEvent('ADDON_LOADED')
+end
+addon:RegisterEvent('ADDON_LOADED', EnableGrids)
+EnableGrids()
 
 -- ========================================================
 --  Functions required by modules
