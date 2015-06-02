@@ -278,6 +278,7 @@ local function IsActiveMission(mission)
 end
 
 local function ScanMissions()
+	-- scans available missions
 	for missionID, info in pairs(garrison.ThisCharacter.Missions) do
 		if not IsActiveMission(info) then
 			garrison.ThisCharacter.Missions[missionID] = nil
@@ -345,9 +346,7 @@ end
 function garrison:GARRISON_MISSION_LIST_UPDATE(event, missionStarted)
 	-- started missions are already handled above
 	if missionStarted then return end
-	for i, mission in pairs(C_Garrison.GetAvailableMissions()) do
-		ScanMission(mission.missionID)
-	end
+	ScanMissions()
 end
 
 -- --------------------------------------------------------
@@ -362,7 +361,7 @@ function garrison.GetUncollectedResources(character)
 	if not timestamp then return 0 end
 
 	-- cache generates 1 resource per 10 minutes
-	local resources = math.floor((timestamp - time())/(10*60))
+	local resources = math.floor((time()-timestamp)/(10*60))
 	return math.min(500, resources)
 end
 
@@ -601,7 +600,7 @@ end
 -- Missions
 -- returns static, non character-based mission data
 function garrison.GetBasicMissionInfo(missionID)
-	local missionInfo = missionID and garrison.db.Missions[missionID]
+	local missionInfo = missionID and garrison.db.global.Missions[missionID]
 	if not missionInfo then return end
 
 	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
