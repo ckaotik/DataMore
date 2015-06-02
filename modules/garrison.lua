@@ -596,7 +596,7 @@ function garrison.GetMissionHistoryInfo(character, missionID, index)
 		end
 	end)
 
-	return startTime, collectTime, successChance, success, followers, speedFactor, goldFactor, resourceFactor
+	return startTime*1, collectTime*1, successChance*1, success == '1' and true or false, followers, speedFactor*1, goldFactor*1, resourceFactor*1
 end
 
 -- Missions
