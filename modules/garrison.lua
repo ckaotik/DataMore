@@ -435,7 +435,7 @@ end
 function garrison.GetFollowerLink(character, garrFollowerID)
 	local link = C_Garrison.GetFollowerLinkByID(garrFollowerID)
 	local followerData = character.Followers[garrFollowerID]
-	if followerData then
+	if link and followerData then
 		local linkData = strsplit('|', followerData)
 		link = link:gsub('garrfollower:([^\124]+)', 'garrfollower:' .. linkData)
 	end
@@ -591,7 +591,9 @@ function garrison.GetMissionHistoryInfo(character, missionID, index)
 	wipe(followers)
 	missionFollowers:gsub('[^:]+', function(followerID)
 		followerID = tonumber(followerID)
-		followers[followerID] = DataStore:GetFollowerLink(characterKey, followerID)
+		if followerID ~= 0 then
+			followers[followerID] = DataStore:GetFollowerLink(characterKey, followerID)
+		end
 	end)
 
 	return startTime, collectTime, successChance, success, followers, speedFactor, goldFactor, resourceFactor
