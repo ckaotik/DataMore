@@ -244,22 +244,23 @@ function garrison:GARRISON_FOLLOWER_REMOVED(event, followerID)
 end
 
 -- missions
-local function ScanMission(missionID)
+local function ScanMission(missionID, timeLeft)
 	if not missionID then return end
 	local mission = C_Garrison.GetBasicMissionInfo(missionID)
 	local successChance = C_Garrison.GetRewardChance(missionID) -- base -or- actual chance
-	local timestamp, followers
+	local followers
 
 	if mission.state == -2 then     -- available
-		timestamp = math.floor(time() + (mission.offerEndTime or 24*60*60) + 0.5)
+		timeLeft = timeLeft or mission.offerEndTime or 24*60*60
 	elseif mission.state == -1 then -- active
-		timestamp = time() + select(5, C_Garrison.GetMissionTimes(missionID))
+		timeLeft = timeLeft or select(5, C_Garrison.GetMissionTimes(missionID))
 		for _, followerID in ipairs(mission.followers) do
 			local followerLink   = C_Garrison.GetFollowerLink(followerID)
 			local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
 			followers = (followers and followers..':' or '') .. garrFollowerID
 		end
 	end
+	local timestamp = math.floor(time() + timeLeft + 0.5)
 	local missionInfo = strjoin('|', timestamp, successChance, followers or '')
 	garrison.ThisCharacter.Missions[missionID] = strtrim(missionInfo, '|')
 
@@ -277,34 +278,82 @@ local function IsActiveMission(mission)
 	return followers and followers ~= ''
 end
 
-local function ScanMissions()
-	-- scans available missions
-	for missionID, info in pairs(garrison.ThisCharacter.Missions) do
-		if not IsActiveMission(info) then
-			garrison.ThisCharacter.Missions[missionID] = nil
+-- TODO: adjust to work with numbered placeholders (%2$d)
+local numberMappings = {
+	['GARRISON_DURATION_DAYS_HOURS']    = {d =   1, h =   2, m = nil, s = nil},
+	['GARRISON_DURATION_HOURS_MINUTES'] = {d = nil, h =   1, m =   2, s = nil},
+	['GARRISON_DURATION_DAYS']          = {d =   1, h = nil, m = nil, s = nil},
+	['GARRISON_DURATION_HOURS']         = {d = nil, h =   1, m = nil, s = nil},
+	['GARRISON_DURATION_MINUTES']       = {d = nil, h = nil, m =   1, s = nil},
+	['GARRISON_DURATION_SECONDS']       = {d = nil, h = nil, m = nil, s =   1},
+}
+local numbers = {}
+local function GetNumbers(number) table.insert(numbers, number); return '' end
+local fontString = UIParent:CreateFontString(nil, nil, 'GameFontNormal')
+local function GetTimeLeftApproximate(timeLeftText)
+	wipe(numbers)
+	timeLeftText:gsub('%d+', GetNumbers)
+	for pattern, map in pairs(numberMappings) do
+		fontString:SetFormattedText(_G[pattern], unpack(numbers), 0, 0, 0, 0)
+		-- get resolved sequences, e.g |4One:Many;
+		if fontString:GetText() == timeLeftText then
+			-- found the pattern, now calculate the time
+			local timeLeft = 0
+			if map.s then timeLeft = timeLeft + numbers[map.s] end
+			if map.m then timeLeft = timeLeft + numbers[map.m]*60 end
+			if map.h then timeLeft = timeLeft + numbers[map.h]*60*60 end
+			if map.d then timeLeft = timeLeft + numbers[map.d]*60*60*24 end
+			return timeLeft
 		end
-	end
-	for index, info in ipairs(C_Garrison.GetAvailableMissions()) do
-		ScanMission(info.missionID)
 	end
 end
 
-function garrison:GARRISON_MISSION_NPC_OPENED(event)
-	-- remove elsewhere collected missions
+local function ScanMissions()
 	wipe(returnTable)
 	C_Garrison.GetInProgressMissions(returnTable)
-	for missionID, missionInfo in pairs(self.ThisCharacter.Missions) do
-		if IsActiveMission(missionInfo) then
-			local exists = false
+	-- remove outdated data
+	for missionID, info in pairs(garrison.ThisCharacter.Missions) do
+		local exists = false
+		if IsActiveMission(info) then
+			-- remove elsewhere collected missions
 			for _, mission in pairs(returnTable) do
 				exists = mission.missionID == missionID
 				if exists then break end
 			end
 			if not exists then
-				self.ThisCharacter.Missions[missionID] = nil
+				-- mission has been collected elsewhere
+				local _, _, _, _, _, duration, isRare = garrison.GetBasicMissionInfo(missionID)
+				local timestamp, successChance, followers = strsplit('|', info)
+				      timestamp, successChance = timestamp * 1, successChance * 1
+
+				if isRare then
+					-- store mission history data
+					garrison.ThisCharacter.MissionHistory[missionID] = garrison.ThisCharacter.MissionHistory[missionID] or {}
+					-- assume mission was failed and without bonuses
+					local missionInfo = strjoin('|', time() - duration, timestamp, successChance, 0, followers, 1, 1, 1)
+					table.insert(garrison.ThisCharacter.MissionHistory[missionID], missionInfo)
+				end
 			end
 		end
+		if not exists then
+			garrison.ThisCharacter.Missions[missionID] = nil
+		end
 	end
+
+	-- now add current data
+	for _, info in pairs(returnTable) do
+		if garrison.ThisCharacter.Missions[info.missionID] == '' then
+			-- mission must have been started elsewhere
+			local timeLeft = GetTimeLeftApproximate(info.timeLeft)
+			ScanMission(info.missionID, timeLeft)
+		end
+	end
+	for _, info in pairs(C_Garrison.GetAvailableMissions()) do
+		ScanMission(info.missionID)
+	end
+end
+
+function garrison:GARRISON_MISSION_NPC_OPENED(event)
 	self.ThisCharacter.lastUpdate = time()
 end
 
@@ -312,6 +361,7 @@ function garrison:GARRISON_MISSION_STARTED(event, missionID)
 	-- update status and followers
 	ScanMission(missionID)
 end
+-- TODO: do we track failed quests in history?
 function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, success)
 	local mission = C_Garrison.GetBasicMissionInfo(missionID)
 	if mission and mission.isRare then
@@ -333,8 +383,8 @@ function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, succes
 
 		local successChance = C_Garrison.GetRewardChance(missionID)
 			or (GarrisonMissionFrame.MissionComplete.ChanceFrame.ChanceText:GetText():match('%d+') * 1)
-		local duration      = select(5, C_Garrison.GetMissionTimes(missionID))
-		local startTime     = (self.ThisCharacter.Missions[missionID].timestamp or duration) - duration
+		local duration  = select(5, C_Garrison.GetMissionTimes(missionID))
+		local startTime = (self.ThisCharacter.Missions[missionID].timestamp or duration) - duration
 
 		local missionInfo = strjoin('|', startTime, time(), successChance, success and 1 or 0, followers, mission.durationSeconds/duration, goldBoost, resourceBoost)
 		self.ThisCharacter.MissionHistory[missionID] = self.ThisCharacter.MissionHistory[missionID] or {}
@@ -864,6 +914,8 @@ function garrison:OnEnable()
 			ScanMissions()
 			-- don't store empty data sets for characters without garrisons
 			self.ThisCharacter.lastUpdate = self.ThisCharacter.lastUpdate or time()
+
+			-- TODO: prune history data
 		end
 		self:UnregisterEvent(event)
 		self:RegisterEvent(event)
