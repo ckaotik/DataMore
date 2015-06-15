@@ -1,9 +1,8 @@
-local addonName, addon = ...
+local addonName, addon, _ = ...
 local garrison = addon:NewModule('Garrison', 'AceEvent-3.0')
 
 -- TODO: store invasions & history
 -- TODO: store mission basic data (icon, ...)
--- TODO: option for strict comparison on follower counts (==, not >=)
 
 -- GLOBALS: _G, LibStub, DataStore, C_Garrison
 -- GLOBALS: wipe, pairs, ipairs, next, strsplit, strjoin, time
@@ -84,29 +83,33 @@ for buildingID, identifier in pairs(buildingNames) do
 	end
 end
 
--- list taken from http://www.wowhead.com/objects=45
+-- http://www.wowdb.com/objects/shipments
 local objectMap = {
-	[230850] =  76, -- Alchemy Lab Work Order
-	[233832] =  40, -- Lumber Mill Work Order
-	[235892] =  76, -- Alchemy Work Order
-	[236641] =  60, -- Blacksmithing Work Order
-	[236649] =  95, -- Inscription Work Order
-	[236652] =  96, -- Jewelcrafting Work Order
+	[236641] =  60, -- Blacksmithing
+	[235892] =  76, -- Alchemy
+	[235913] =  90, -- Leatherworking
+	[237146] =  91, -- Engineering
+	[235790] =  93, -- Enchanting
+	[237665] =  94, -- Tailoring
+	[236649] =  95, -- Inscription
+	[235773] =  96, -- Jewelcrafting
+
+	[238761] =  24, -- Barn Shipment
+	[233832] =  40, -- Lumber Mill Shipment
 	[236721] = 159, -- Tribute
-	[236948] =  90, -- Leatherworking Work Order
-	[237027] = 111, -- Trading Post Work Order
-	[237138] =  93, -- Enchanting Work Order
-	[237146] =  91, -- Engineering Work Order
-	[237665] =  94, -- Tailoring Work Order
-	[238756] =  91, -- Workshop Work Order
-	[238757] =  91, -- Workshop Work Order
-	[238761] =  24, -- Barn Work Order
-	[239066] =   8, -- Dwarven Bunker Work Order
-	[239067] =   8, -- War Mill Work Order
-	[239237] =  61, -- Mine Work Order
-	[239238] =  29, -- Herb Garden Work Order
-	[240601] =  37, -- Spirit Lodge Work Order
-	[240602] =  37, -- Mage Tower Work Order
+
+	[239067] =   8, -- War Mill Work Order (Horde)
+	[239066] =   8, -- Dwarven Bunker Work Order (Alliance)
+	[239238] =  29, -- Herb Garden Shipment (Horde)
+	[235885] =  29, -- Herb Garden Shipment (Alliance)
+	[240601] =  37, -- Spirit Lodge Work Order (Horde)
+	[240602] =  37, -- Mage Tower Work Order (Alliance)
+	[239237] =  61, -- Mine Shipment (Horde)
+	[235886] =  61, -- Mine Shipment (Alliance)
+	[238757] =  91, -- Workshop Work Order (Horde)
+	[238756] =  91, -- Workshop Work Order (Alliance)
+	[237355] = 111, -- Trading Post Shipment (Horde)
+	[237027] = 111, -- Trading Post Shipment (Alliance)
 }
 
 -- --------------------------------------------------------
@@ -150,17 +153,11 @@ local function ScanShipmentLoot(event)
 	local guidType, _, _, _, _, id = strsplit('-', source)
 	if guidType == 'GameObject' then
 		local buildingID = objectMap[id * 1]
-		if not buildingID then return end
 		C_Garrison.RequestLandingPageShipmentInfo()
-		garrison:SendMessage('DATAMORE_GARRISON_SHIPMENT_COLLECTED', buildingID)
+		if buildingID then
+			garrison:SendMessage('DATAMORE_GARRISON_SHIPMENT_COLLECTED', buildingID)
+		end
 	end
-end
-
--- landing page updates with a slight delay
-function garrison:SHIPMENT_CRAFTER_INFO(event, success, numActive, capacity, plotID)
-	if success == 1 then C_Garrison.RequestLandingPageShipmentInfo() end
-	self:UnregisterEvent('SHIPMENT_CRAFTER_INFO')
-	self:UnregisterEvent('SHIPMENT_CRAFTER_CLOSED')
 end
 
 -- buildings
@@ -174,6 +171,12 @@ local function ScanPlot(plotID)
 	garrison.ThisCharacter.Plots[plotID] = strjoin('|', buildingID or '', rank or 0, upgradeInfo)
 	if garrFollowerID then
 		garrison.ThisCharacter.Plots[plotID] = garrison.ThisCharacter.Plots[plotID] .. '|' .. garrFollowerID
+	end
+end
+
+local function ScanPlots()
+	for index, info in ipairs(C_Garrison.GetPlots()) do
+		ScanPlot(info.id)
 	end
 end
 
@@ -248,7 +251,7 @@ local function ScanMission(missionID, timeLeft)
 	if not missionID then return end
 	local mission = C_Garrison.GetBasicMissionInfo(missionID)
 	local successChance = C_Garrison.GetRewardChance(missionID) -- base -or- actual chance
-	local followers
+	local missionFollowers
 
 	if mission.state == -2 then     -- available
 		timeLeft = timeLeft or mission.offerEndTime or 24*60*60
@@ -257,11 +260,11 @@ local function ScanMission(missionID, timeLeft)
 		for _, followerID in ipairs(mission.followers) do
 			local followerLink   = C_Garrison.GetFollowerLink(followerID)
 			local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
-			followers = (followers and followers..':' or '') .. garrFollowerID
+			missionFollowers = (missionFollowers and missionFollowers..':' or '') .. garrFollowerID
 		end
 	end
 	local timestamp = math.floor(time() + timeLeft + 0.5)
-	local missionInfo = strjoin('|', timestamp, successChance, followers or '')
+	local missionInfo = strjoin('|', timestamp, successChance, missionFollowers or '')
 	garrison.ThisCharacter.Missions[missionID] = strtrim(missionInfo, '|')
 
 	-- store general information about this mission not available via C_Garrison API
@@ -274,8 +277,8 @@ local function IsActiveMission(mission)
 	if type(mission) == 'number' then
 		mission = garrison.ThisCharacter.Missions[mission]
 	end
-	local timestamp, successChance, followers = strsplit('|', mission or '')
-	return followers and followers ~= ''
+	local timestamp, successChance, missionFollowers = strsplit('|', mission or '')
+	return missionFollowers and missionFollowers ~= ''
 end
 
 -- TODO: adjust to work with numbered placeholders (%2$d)
@@ -323,14 +326,14 @@ local function ScanMissions()
 			if not exists then
 				-- mission has been collected elsewhere
 				local _, _, _, _, _, duration, isRare = garrison.GetBasicMissionInfo(missionID)
-				local timestamp, successChance, followers = strsplit('|', info)
+				local timestamp, successChance, missionFollowers = strsplit('|', info)
 				      timestamp, successChance = timestamp * 1, successChance * 1
 
 				if isRare then
 					-- store mission history data
 					garrison.ThisCharacter.MissionHistory[missionID] = garrison.ThisCharacter.MissionHistory[missionID] or {}
 					-- assume mission was failed and without bonuses
-					local missionInfo = strjoin('|', time() - duration, timestamp, successChance, 0, followers, 1, 1, 1)
+					local missionInfo = strjoin('|', time() - duration, timestamp, successChance, 0, missionFollowers, 1, 1, 1)
 					table.insert(garrison.ThisCharacter.MissionHistory[missionID], missionInfo)
 				end
 			end
@@ -361,32 +364,29 @@ function garrison:GARRISON_MISSION_STARTED(event, missionID)
 	-- update status and followers
 	ScanMission(missionID)
 end
--- TODO: do we track failed quests in history?
 function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, success)
-	local mission = C_Garrison.GetBasicMissionInfo(missionID)
-	if mission and mission.isRare then
+	local _, _, _, _, _, durationSeconds, isRare, _, _, followers = garrison.GetBasicMissionInfo(missionID)
+	if durationSeconds and isRare then
 		-- only logging rare missions
-		local followers, goldBoost, resourceBoost = '', 0, 0
+		local missionFollowers, goldBoost, resourceBoost = '', 0, 0
 		for followerIndex = 1, 3 do
-			local followerID, garrFollowerID = mission.followers and mission.followers[followerIndex], 0
-			if followerID then
+			local garrFollowerID = followers and followers[followerIndex]
+			if garrFollowerID then
 				for traitIndex = 1, 3 do
-					local traitID = C_Garrison.GetFollowerTraitAtIndex(followerID, traitIndex)
+					local traitID = C_Garrison.GetFollowerTraitAtIndexByID(garrFollowerID, traitIndex)
 					goldBoost     =     goldBoost + (traitID == 256 and 1 or 0)
 					resourceBoost = resourceBoost + (traitID ==  79 and 1 or 0)
 				end
-				local followerLink = C_Garrison.GetFollowerLink(followerID)
-				garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
 			end
-			followers = (followers ~= '' and followers..':' or '') .. garrFollowerID
+			missionFollowers = (missionFollowers ~= '' and missionFollowers..':' or '') .. (garrFollowerID or 0)
 		end
 
 		local successChance = C_Garrison.GetRewardChance(missionID)
 			or (GarrisonMissionFrame.MissionComplete.ChanceFrame.ChanceText:GetText():match('%d+') * 1)
-		local duration  = select(5, C_Garrison.GetMissionTimes(missionID))
+		local duration  = select(5, C_Garrison.GetMissionTimes(missionID)) or durationSeconds
 		local startTime = (self.ThisCharacter.Missions[missionID].timestamp or duration) - duration
 
-		local missionInfo = strjoin('|', startTime, time(), successChance, success and 1 or 0, followers, mission.durationSeconds/duration, goldBoost, resourceBoost)
+		local missionInfo = strjoin('|', startTime, time(), successChance, success and 1 or 0, missionFollowers, durationSeconds/duration, goldBoost, resourceBoost)
 		self.ThisCharacter.MissionHistory[missionID] = self.ThisCharacter.MissionHistory[missionID] or {}
 		table.insert(self.ThisCharacter.MissionHistory[missionID], missionInfo)
 	end
@@ -650,13 +650,28 @@ function garrison.GetMissionHistoryInfo(character, missionID, index)
 end
 
 -- Missions
+local function AddFollower(followerID) tinsert(followers, followerID*1) end
 -- returns static, non character-based mission data
 function garrison.GetBasicMissionInfo(missionID)
-	local missionInfo = missionID and garrison.db.global.Missions[missionID]
-	if not missionInfo then return end
-
-	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
-	return missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare == '1' and true or false, locPrefix, location
+	wipe(followers)
+	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix
+	local info = C_Garrison.GetBasicMissionInfo(missionID)
+	if info then
+		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = info.type, info.location, info.level, info.iLevel, info.durationSeconds, info.isRare, info.cost, info.typeAtlas, info.locPrefix
+		for k, followerID in pairs(info.followers) do
+			local followerLink   = C_Garrison.GetFollowerLink(followerID)
+			local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
+			followers[k] = garrFollowerID
+		end
+	else
+		local missionInfo = missionID and garrison.db.global.Missions[missionID]
+		if not missionInfo then return end
+		-- try figure out mission followers
+		local missionFollowers = select(3, strsplit('|', missionInfo)) or ''
+		missionFollowers:gsub('[^:]+', AddFollower)
+		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
+	end
+	return missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare == '1' and true or false, locPrefix, location, followers
 end
 
 function garrison.GetMissionInfo(character, missionID)
@@ -669,9 +684,7 @@ function garrison.GetMissionInfo(character, missionID)
 
 	-- resolve followers
 	wipe(followers)
-	missionFollowers:gsub('[^:]+', function(followerID)
-		tinsert(followers, followerID*1)
-	end)
+	missionFollowers:gsub('[^:]+', AddFollower)
 
 	local missionType, typeAtlas, level, ilevel, cost, duration = garrison.GetBasicMissionInfo(missionID)
 	return missionType, typeAtlas, level, ilevel, cost, duration, followers, remainingTime, successChance
@@ -890,9 +903,8 @@ function garrison:OnEnable()
 	self:RegisterEvent('LOOT_READY', ScanShipmentLoot)
 	self:RegisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS', ScanShipments)
 	hooksecurefunc(C_Garrison, 'RequestShipmentCreation', function(numShipments)
-		-- events are only registered on demand
-		self:RegisterEvent('SHIPMENT_CRAFTER_INFO')
-		self:RegisterEvent('SHIPMENT_CRAFTER_CLOSED', garrison.SHIPMENT_CRAFTER_INFO, self)
+		-- landing page updates with a slight delay
+		C_Timer.After(0.5, C_Garrison.RequestLandingPageShipmentInfo)
 	end)
 
 	-- missions
@@ -910,6 +922,7 @@ function garrison:OnEnable()
 	self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE', function(self, event, ...)
 		-- first time initialization
 		if C_Garrison.GetGarrisonInfo() then
+			ScanPlots()
 			ScanFollowers()
 			ScanMissions()
 			-- don't store empty data sets for characters without garrisons
@@ -948,6 +961,7 @@ function garrison:OnDisable()
 	-- shipment events
 	self:UnregisterEvent('LOOT_READY')
 	self:UnregisterEvent('GARRISON_LANDINGPAGE_SHIPMENTS')
+	self:UnregisterEvent('SHIPMENT_UPDATE')
 	self:UnregisterEvent('SHIPMENT_CRAFTER_INFO')
 	self:UnregisterEvent('SHIPMENT_CRAFTER_CLOSED')
 end
