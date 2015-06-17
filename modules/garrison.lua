@@ -112,6 +112,11 @@ local objectMap = {
 	[237027] = 111, -- Trading Post Shipment (Alliance)
 }
 
+local function PruneDB()
+	-- TODO: remove old MissionHistory entries
+	-- TODO: remove unused Mission data
+end
+
 -- --------------------------------------------------------
 --  Gathering Data
 -- --------------------------------------------------------
@@ -928,7 +933,7 @@ function garrison:OnEnable()
 			-- don't store empty data sets for characters without garrisons
 			self.ThisCharacter.lastUpdate = self.ThisCharacter.lastUpdate or time()
 
-			-- TODO: prune history data
+			PruneDB()
 		end
 		self:UnregisterEvent(event)
 		self:RegisterEvent(event)
