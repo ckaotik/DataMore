@@ -50,8 +50,7 @@ local filters = {
 }
 local function ScanGlyphList()
 	-- Blizzard provides no GetGlyphInfo(glyphID) function so we need to store all this data ourselves
-	local data = glyphs.ThisCharacter
-	wipe(data.knownGlyphs)
+	wipe(glyphs.ThisCharacter.knownGlyphs)
 
 	local _, class = UnitClass('player')
 	local classGlyphs = glyphs.db.global.glyphs[class]
@@ -78,7 +77,7 @@ local function ScanGlyphList()
 
 		-- not storing as bit map b/c when glyph list changes, char data becomes invalid
 		if glyphID and isKnown then
-			data.knownGlyphs[glyphID] = true
+			glyphs.ThisCharacter.knownGlyphs[glyphID] = true
 		end
 	end
 
@@ -89,7 +88,7 @@ local function ScanGlyphList()
 		end
 	end
 
-	data.lastUpdate = time()
+	glyphs.ThisCharacter.lastUpdate = time()
 end
 
 -- == Glyphs API ==========================================

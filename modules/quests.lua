@@ -15,6 +15,9 @@ local AddonDB_Defaults = {
 				-- QuestLog = {},
 				-- QuestLinks = {},
 				-- QuestRewards = {}, -- itemLink, type (choice/item/spell/talent), amount
+				--[[ Quests = { -- keyed by questID
+					['*'] = '0/1',
+				}, --]]
 			}
 		}
 	}
