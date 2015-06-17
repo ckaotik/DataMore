@@ -10,7 +10,7 @@ local defaults = {
 		Characters = {
 			['*'] = {
 				lastUpdate = nil,
-				equipmentSets = {},
+				EquipmentSets = {},
 			}
 		}
 	}
@@ -18,7 +18,7 @@ local defaults = {
 
 local SLOT_MISSING, SLOT_INVALID, SLOT_IGNORED = -1, 0, 1
 local function UpdateEquipmentSet(setName, setIcon)
-	local sets = equipment.ThisCharacter.equipmentSets
+	local sets = equipment.ThisCharacter.EquipmentSets
 	if not sets[setName] then
 		sets[setName] = {}
 	end
@@ -64,7 +64,7 @@ local function UpdateEquipmentSet(setName, setIcon)
 	end
 end
 local function UpdateEquipmentSets()
-	local sets = equipment.ThisCharacter.equipmentSets
+	local sets = equipment.ThisCharacter.EquipmentSets
 	for setName, setInfo in pairs(sets) do
 		local _, setID = GetEquipmentSetInfoByName(setName)
 		if not setID then
@@ -82,7 +82,7 @@ end
 
 local function _GetNumEquipmentSets(character)
 	local count = 0
-	for k, v in pairs(character.equipmentSets) do
+	for k, v in pairs(character.EquipmentSets) do
 		count = count + 1
 	end
 	return count
@@ -90,7 +90,7 @@ end
 
 local function _GetEquipmentSetNames(character)
 	local setNames = {}
-	for setName, items in pairs(character.equipmentSets) do
+	for setName, items in pairs(character.EquipmentSets) do
 		table.insert(setNames, setName)
 	end
 	table.sort(setNames)
@@ -98,7 +98,7 @@ local function _GetEquipmentSetNames(character)
 end
 
 local function _GetEquipmentSetItem(character, setName, slotID)
-	local item = character.equipmentSets[setName][slotID]
+	local item = character.EquipmentSets[setName][slotID]
 	local _, itemLink = GetItemInfo(item)
 	return itemLink
 end
@@ -106,7 +106,7 @@ end
 local items = {}
 local function _GetEquipmentSetItems(character, setName)
 	wipe(items)
-	for slotID, item in pairs(character.equipmentSets[setName]) do
+	for slotID, item in pairs(character.EquipmentSets[setName]) do
 		local _, itemLink = GetItemInfo(item)
 		items[slotID] = itemLink
 	end
@@ -114,8 +114,8 @@ local function _GetEquipmentSetItems(character, setName)
 end
 
 local function _GetEquipmentSet(character, setName)
-	if not character.equipmentSets[setName] then return end
-	local icon = character.equipmentSets[setName].icon
+	if not character.EquipmentSets[setName] then return end
+	local icon = character.EquipmentSets[setName].icon
 	local items = _GetEquipmentSetItems(character, setName)
 	return setName, icon, items
 end
