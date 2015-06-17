@@ -11,7 +11,7 @@ local MSG_SENDMAIL_INIT, MSG_SENDMAIL_END, MSG_SENDMAIL_ATTACHMENT, MSG_SENDMAIL
 local thisCharacter = DataStore:GetCharacter()
 local playerRealm
 
-local DEFAULT_STATIONERY = 'Interface\\Icons\\INV_Misc_Note_01'
+local DEFAULT_STATIONERY = 'Interface\\ICONS\\INV_Misc_Note_01.blp'
 local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED, STATUS_RETURNED_READ = 0, 1, 2, 3
 
 -- these subtables need unique identifier
@@ -194,7 +194,50 @@ local function ScanMail(index, ...)
 	return mail
 end
 
+local function StoreForeignMail(mail, recipientKey)
+	if not recipientKey or not mail then return end
+	local character = mails.db.global.Characters[recipientKey]
+	table.insert(character.Mails, mail)
+	-- keep sorting intact
+	table.sort(character.Mails, function(a, b)
+		return a.expires < b.expires
+	end)
+
+	if not character.lastUpdate then
+		-- apply lastUpdate so data is considered valid
+		character.lastUpdate = 0
+	end
+end
+
+-- takes required actions when a mail is sent (either via outbox or as a retour)
+local function HandleMail(mail, recipient)
+	local recipientKey = GetRecipientKey(recipient)
+	if recipientKey then
+		-- recipient is an alt
+		StoreForeignMail(mail, recipientKey)
+	else
+		-- TODO: also notify when recipient is a friend
+		local contactName, isGuild, isFriend, isBNFriend = IsRecipientKnown(recipient)
+
+		-- might be a guild member
+		-- local recipientName = Ambiguate(recipient, 'guild')
+		-- local player = DataStore:GetNameOfMain(recipientName)
+		-- if player and DataStore:IsGuildMemberOnline(player) then
+		if isGuild then
+			mails:NotifyGuild(mail, contactName, recipient)
+		end
+	end
+end
+
+local sentMail -- temporary storage for mails until MAIL_SUCCESS fires
 local function ScanInbox()
+	if sentMail then
+		local recipient = sentMail.recipient
+		sentMail.recipient = nil
+		HandleMail(sentMail, recipient)
+		sentMail = nil
+	end
+
 	local character = mails.ThisCharacter
 	wipe(character.Mails)
 
@@ -205,7 +248,7 @@ local function ScanInbox()
 	character.lastUpdate = #character.Mails > 0 and time() or nil
 end
 
-local function NotifyGuildMail(mail, player, recipientName)
+function mails:NotifyGuild(mail, player, recipientName)
 	-- we inform <player> that her character <recipientName> received mail
 	local data = mails:Serialize(MSG_SENDMAIL_INIT, recipientName)
 	mails:SendCommMessage(commPrefix, data, 'WHISPER', player)
@@ -224,45 +267,10 @@ local function NotifyGuildMail(mail, player, recipientName)
 	mails:SendCommMessage(commPrefix, mails:Serialize(MSG_SENDMAIL_END), 'WHISPER', player)
 end
 
-local function StoreForeignMail(mail, recipientKey)
-	if not recipientKey or not mail then return end
-	local character = mails.db.global.Characters[recipientKey]
-	table.insert(character.Mails, mail)
-	-- keep sorting intact
-	table.sort(character.Mails, function(a, b)
-		return a.expires < b.expires
-	end)
-
-	if not character.lastUpdate then
-		-- apply lastUpdate so data is considered valid
-		character.lastUpdate = 0
-	end
-end
-
--- takes required actions when a mail is sent (either via outbox or as a retour)
--- TODO: also notify when recipient is a friend
-local function HandleMail(mail, recipient)
-	local recipientKey = GetRecipientKey(recipient)
-	if recipientKey then
-		-- recipient is an alt
-		StoreForeignMail(mail, recipientKey)
-	else
-		local contactName, isGuild, isFriend, isBNFriend = IsRecipientKnown(recipient)
-
-		-- might be a guild member
-		-- local recipientName = Ambiguate(recipient, 'guild')
-		-- local player = DataStore:GetNameOfMain(recipientName)
-		-- if player and DataStore:IsGuildMemberOnline(player) then
-		if isGuild then
-			NotifyGuildMail(mail, contactName, recipient)
-		end
-	end
-end
-
--- called on SendMail()
+-- called on SendMail(), but may fail with MAIL_FAILED due to invalid recipient
 local function OnSendMail(recipient, subject, body)
-	local mail = ScanMail(0, recipient, subject, body)
-	HandleMail(mail, recipient)
+	sentMail = ScanMail(0, recipient, subject, body)
+	sentMail.recipient = recipient
 end
 
 -- called on ReturnMail()
@@ -413,6 +421,7 @@ function mails:OnEnable()
 	-- we don't handle DeleteInboxItem since MAIL_SUCCESS fires directly afterwards
 
 	self:RegisterEvent('MAIL_SUCCESS', ScanInbox)
+	self:RegisterEvent('MAIL_FAILED', function() sentMail = nil end)
 	self:RegisterEvent('MAIL_SHOW', function()
 		self:RegisterEvent('MAIL_INBOX_UPDATE', OnOpenMail)
 	end)
