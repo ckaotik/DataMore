@@ -11,22 +11,35 @@ local factions = addon:NewModule('Factions', 'AceEvent-3.0')
 --]]
 
 local FACTION_INACTIVE = -1
+local FACTION_GUILD = 1168
 
 local reputationStandings = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000, 43000 }
 local friendshipStandings = { 0, 8400, 16800, 25200, 33600, 42000, 43000 }
-local friendStandingsTexts = {} -- filled on scan .. this sucks, see @TODO below
+-- labels of known standings for this character are filled on scan, supply fallback
+local friendStandingsTexts = setmetatable({}, {
+	__index = function(self, key)
+		local value = rawget(self, key)
+		if not value then
+			value = _G.TOOLTIP_TALENT_RANK:format(key, #friendshipStandings - 1)
+		end
+		return value
+	end,
+})
 
 local defaults = {
 	global = {
 		Characters = {
-			['*'] = {
+			['*'] = { -- keyed by faction id
 				lastUpdate = nil,
 				factions = '', -- holds the display order
 				reputations = { -- hold the faction's reputation standing
 					['*'] = 0
 				},
 			}
-		}
+		},
+		Factions = { -- keyed by faction id
+			['*'] = _G.UNKNOWN,
+		},
 	}
 }
 
@@ -73,13 +86,16 @@ local function ScanReputations()
 		-- print('scanning faction', factionID, name, reputation)
 		factionList = (factionList and factionList..',' or '') .. (factionID or FACTION_INACTIVE)
 		character.reputations[factionID or FACTION_INACTIVE] = reputation
+		if factionID ~= FACTION_GUILD then
+			factions.db.global.Factions[factionID or FACTION_INACTIVE] = name
+		end
 	end
 	character.factions = factionList
 	character.lastUpdate = time()
 
 	-- restore pre-scan states
 	for index = GetNumFactions(), 1, -1 do
-		local name, _, _, _, _, _, _, _, isHeader, isCollapsed, _, _, _, factionID = GetFactionInfo(index)
+		local _, _, _, _, _, _, _, _, isHeader, _, _, _, _, factionID = GetFactionInfo(index)
 		if isHeader and (collapsedHeaders[factionID or FACTION_INACTIVE]) then
 			CollapseFactionHeader(index)
 		end
@@ -150,8 +166,12 @@ function factions.GetFactionInfo(character, index)
 end
 
 function factions.GetFactionInfoByName(character, factionName)
+	if factionName == GetFactionInfoByID(FACTION_GUILD) then
+		-- properly recognize guild reputation
+		factionName = _G.GUILD
+	end
 	for factionID, reputation in pairs(character.reputations) do
-		local name = GetFactionInfo(factionID)
+		local name = factions.GetFactionName(factionID)
 		if name == factionName then
 			return factions.GetFactionInfoByID(character, factionID)
 		end
@@ -159,14 +179,14 @@ function factions.GetFactionInfoByName(character, factionName)
 	return 0, 0, 0, _G.FACTION_STANDING_LABEL1, 0, 1
 end
 
-function factions.GetFactionName(dsID)
-	-- TODO: map DataStore_Reputations faction id to Blizzard faction id
-	-- TODO: fix GetFactionInfo() not working on foreign factions
-	return dsID
+function factions.GetFactionName(factionID)
+	if factionID == FACTION_GUILD then return _G.GUILD end
+	local name = GetFactionInfoByID(factionID) or factions.db.global.Factions[factionID]
+	return name or factionID
 end
 
 function factions.GetFactionInfoGuild(character)
-	return factions.GetFactionInfoByID(character, 1168)
+	return factions.GetFactionInfoByID(character, FACTION_GUILD)
 end
 
 local PublicMethods = {
