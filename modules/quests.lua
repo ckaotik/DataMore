@@ -17,31 +17,6 @@ local defaults = {
 		}
 	}
 }
--- /spew DataMore:GetModule('Quests').ThisCharacter.Quests
-
-local function _GetAchievementProgress(character, achievementID)
-	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
-
-	local _, _, _, completed, _, _, _, _, flags = GetAchievementInfo(achievementID)
-	local isShared = bit.band(flags, ACHIEVEMENT_FLAGS_ACCOUNT) == ACHIEVEMENT_FLAGS_ACCOUNT
-
-	local achievementProgress = 0
-	local achievementGoal = 0
-
-	for index = 1, GetAchievementNumCriteria(achievementID) do
-		local _, _, _, _, requiredQuantity,_, _, _, quantityString = GetAchievementCriteriaInfo(achievementID, index)
-		local requiredQuantityString = tonumber( quantityString:match('/%s*(%d+)') or '' )
-		if requiredQuantityString and requiredQuantityString ~= requiredQuantity then
-			-- fix currencies being multiplied by 100
-			requiredQuantity = requiredQuantityString
-		end
-
-		local _, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, isShared)
-		achievementProgress = achievementProgress + (critCompleted and requiredQuantity or progress or 0)
-		achievementGoal     = achievementGoal + requiredQuantity
-	end
-	return achievementProgress, achievementGoal, isShared
-end
 
 local function GetReputationProgress(character, faction, minReputation)
 	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
@@ -52,70 +27,7 @@ local function GetReputationProgress(character, faction, minReputation)
 	return currentReputation, minReputation
 end
 
--- [questID][criteriaIndex] = {handler, args, ...}
-local progressHandler = {
-	[32474] = { -- test of valor (alliance)
-		[1] = {_GetAchievementProgress, 8031}
-	},
-	[32476] = { -- test of valor (horde)
-		[1] = {_GetAchievementProgress, 8031}
-	},
-	[31468] = { -- trial of the black prince (honored)
-		[1] = {GetReputationProgress, 1359, 9000}
-	},
-	[32429] = { -- the prince's pursuit (horde, revered)
-		[1] = {GetReputationProgress, 1359, 21000}
-	},
-	[32374] = { -- the prince's pursuit (alliance, revered)
-		[1] = {GetReputationProgress, 1359, 21000}
-	},
-	[32592] = { -- i need a champion (exhalted)
-		[1] = {GetReputationProgress, 1359, 42000}
-	},
-	[33342] = { -- Drive Back The Flame (shaohao honored)
-		[1] = {GetReputationProgress, 1492, 9000}
-	},
-}
-
-local function _GetQuestProgress(character, questID)
-	return character.QuestProgress[questID] or emptyTable
-end
-
-local function _GetQuestProgressPercentage(character, questID)
-	local data = character.Quests[questID]
-	local progress = 0
-	if type(data) == 'number' then
-		progress = data/100
-	elseif data then
-		local numCriteria = 0
-		local text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
-		while objectiveType do
-			numCriteria = numCriteria + 1
-			local criteriaProgress = data[numCriteria] or 0
-			local goal = text and text:match('%d+/(%d+)') or 100
-			      goal = goal*1
-			if criteriaProgress > goal then
-				criteriaProgress = goal
-			end
-			progress = progress + criteriaProgress/goal
-			text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
-		end
-		if data.requiredMoney then
-			numCriteria = numCriteria + 1
-			local characterKey = DataStore:GetCurrentCharacterKey()
-			local money = DataStore:GetMoney(characterKey) or 0
-			if money >= data.requiredMoney then
-				progress = progress + 1
-			else
-				progress = progress + money/data.requiredMoney
-			end
-		end
-		progress = progress > 0 and (progress / numCriteria) or 0
-	end
-	return progress
-end
-
-local function UpdateQuestProgress()
+local function ScanQuests()
 	wipe(quests.ThisCharacter.Quests)
 
 	local numRows, numQuests = GetNumQuestLogEntries()
@@ -127,6 +39,7 @@ local function UpdateQuestProgress()
 		elseif not isHeader then
 			quests.ThisCharacter.Quests[questID] = {}
 
+			-- local text = C_TaskQuest.GetQuestObjectiveStrByQuestID(questID)
 			-- local progress = GetQuestProgressBarPercent(questID)
 			local requiredMoney = GetQuestLogRequiredMoney(questIndex)
 			if requiredMoney > 0 then
@@ -159,11 +72,107 @@ local function UpdateQuestProgress()
 	quests.ThisCharacter.lastUpdate = time()
 end
 
--- setup
+-- ------------------------------------
+--  Mixins
+-- ------------------------------------
+function quests.GetAchievementProgress(character, achievementID)
+	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
+
+	local _, _, _, completed, _, _, _, _, flags = GetAchievementInfo(achievementID)
+	local isShared = bit.band(flags, ACHIEVEMENT_FLAGS_ACCOUNT) == ACHIEVEMENT_FLAGS_ACCOUNT
+
+	local achievementProgress = 0
+	local achievementGoal = 0
+
+	for index = 1, GetAchievementNumCriteria(achievementID) do
+		local _, _, _, _, requiredQuantity,_, _, _, quantityString = GetAchievementCriteriaInfo(achievementID, index)
+		local requiredQuantityString = tonumber( quantityString:match('/%s*(%d+)') or '' )
+		if requiredQuantityString and requiredQuantityString ~= requiredQuantity then
+			-- fix currencies being multiplied by 100
+			requiredQuantity = requiredQuantityString
+		end
+
+		local _, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, isShared)
+		achievementProgress = achievementProgress + (critCompleted and requiredQuantity or progress or 0)
+		achievementGoal     = achievementGoal + requiredQuantity
+	end
+	return achievementProgress, achievementGoal, isShared
+end
+
+-- [questID][criteriaIndex] = {handler, args, ...}
+local progressHandler = {
+	[32474] = { -- test of valor (alliance)
+		[1] = {quests.GetAchievementProgress, 8031}
+	},
+	[32476] = { -- test of valor (horde)
+		[1] = {quests.GetAchievementProgress, 8031}
+	},
+	[31468] = { -- trial of the black prince (honored)
+		[1] = {GetReputationProgress, 1359, 9000}
+	},
+	[32429] = { -- the prince's pursuit (horde, revered)
+		[1] = {GetReputationProgress, 1359, 21000}
+	},
+	[32374] = { -- the prince's pursuit (alliance, revered)
+		[1] = {GetReputationProgress, 1359, 21000}
+	},
+	[32592] = { -- i need a champion (exhalted)
+		[1] = {GetReputationProgress, 1359, 42000}
+	},
+	[33342] = { -- Drive Back The Flame (shaohao honored)
+		[1] = {GetReputationProgress, 1492, 9000}
+	},
+}
+
+function quests.GetQuestProgress(character, questID)
+	local hasQuest = rawget(character.Quests, questID)
+	local progress = quests.GetQuestProgressPercentage(character, questID)
+	return hasQuest and true or false, progress
+end
+
+function quests.GetQuestProgressPercentage(character, questID)
+	local data = rawget(character.Quests, questID)
+	if not data then return 0 end
+
+	local progress = 0
+	if type(data) == 'number' then
+		progress = data/100
+	elseif data then
+		local numCriteria = 0
+		local text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
+		while objectiveType do
+			numCriteria = numCriteria + 1
+			local criteriaProgress = data[numCriteria] or 0
+			local goal = text and text:match('%d+/(%d+)') or 100
+			      goal = goal*1
+			if criteriaProgress > goal then
+				criteriaProgress = goal
+			end
+			progress = progress + criteriaProgress/goal
+			text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
+		end
+		if data.requiredMoney then
+			numCriteria = numCriteria + 1
+			local characterKey = DataStore:GetCurrentCharacterKey()
+			local money = DataStore:GetMoney(characterKey) or 0
+			if money >= data.requiredMoney then
+				progress = progress + 1
+			else
+				progress = progress + money/data.requiredMoney
+			end
+		end
+		progress = progress > 0 and (progress / numCriteria) or 0
+	end
+	return progress
+end
+
+-- ------------------------------------
+--  Module Setup
+-- ------------------------------------
 local PublicMethods = {
-	GetQuestProgress = _GetQuestProgress,
-	GetQuestProgressPercentage = _GetQuestProgressPercentage,
-	GetAchievementProgress = _GetAchievementProgress, -- TODO: FIXME: does not belong here
+	GetQuestProgress = quests.GetQuestProgress,
+	GetQuestProgressPercentage = quests.GetQuestProgressPercentage,
+	GetAchievementProgress = quests.GetAchievementProgress, -- TODO: FIXME: does not belong here
 }
 
 function quests:OnInitialize()
@@ -176,10 +185,10 @@ function quests:OnInitialize()
 end
 
 function quests:OnEnable()
-	self:RegisterEvent('PLAYER_ALIVE', UpdateQuestProgress)
-	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', UpdateQuestProgress)
-	-- self:RegisterEvent("QUEST_COMPLETE", UpdateQuestProgress)
-	UpdateQuestProgress()
+	self:RegisterEvent('PLAYER_ALIVE', ScanQuests)
+	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', ScanQuests)
+	-- self:RegisterEvent("QUEST_COMPLETE", ScanQuests)
+	ScanQuests()
 end
 
 function quests:OnDisable()
