@@ -1,23 +1,19 @@
 local addonName, addon, _ = ...
 local quests = addon:NewModule('Quests', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
-local characters    = DataStore:GetCharacters()
-local thisCharacter = DataStore:GetCharacter()
 local emptyTable = {}
 
--- these subtables need unique identifier
-local AddonDB_Defaults = {
+local defaults = {
 	global = {
 		Characters = {
 			['*'] = {				-- ["Account.Realm.Name"]
 				lastUpdate = nil,
+				Quests = {
+					['*'] = { -- keyed by questID
+						['*'] = 0, -- using this line causes started quests w/o progress to not be tracked
+					},
+				},
 				QuestProgress = {},
-				-- QuestLog = {},
-				-- QuestLinks = {},
-				-- QuestRewards = {}, -- itemLink, type (choice/item/spell/talent), amount
-				--[[ Quests = { -- keyed by questID
-					['*'] = '0/1',
-				}, --]]
 			}
 		}
 	}
@@ -86,62 +82,107 @@ local function _GetQuestProgress(character, questID)
 end
 
 local function _GetQuestProgressPercentage(character, questID)
-	local data = _GetQuestProgress(character, questID)
-
-	local current, max = 0, 0
-	for criteriaIndex, criteriaProgress in ipairs(data) do
-		local critCurrent, critMax
-		local objective, progress = criteriaProgress:match('^(.+): ([^:]+)$')
-		if progress then
-			critCurrent, critMax = string.split('/', progress)
+	local data = character.Quests[questID]
+	local progress = 0
+	if type(data) == 'number' then
+		progress = data/100
+	elseif data then
+		local numCriteria = 0
+		local text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
+		while objectiveType do
+			numCriteria = numCriteria + 1
+			local criteriaProgress = data[numCriteria] or 0
+			local goal = text and text:match('%d+/(%d+)') or 100
+			      goal = goal*1
+			if criteriaProgress > goal then
+				criteriaProgress = goal
+			end
+			progress = progress + criteriaProgress/goal
+			text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
 		end
-		current = current + (critCurrent and tonumber(critCurrent) or 0)
-		max     = max     + (critMax     and tonumber(critMax)     or 1)
+		if data.requiredMoney then
+			numCriteria = numCriteria + 1
+			local characterKey = DataStore:GetCurrentCharacterKey()
+			local money = DataStore:GetMoney(characterKey) or 0
+			if money >= data.requiredMoney then
+				progress = progress + 1
+			else
+				progress = progress + money/data.requiredMoney
+			end
+		end
+		progress = progress > 0 and (progress / numCriteria) or 0
 	end
+	-- return progress
 
-	if data[0] then
-		-- money required
-		local characterKey = DataStore:GetCurrentCharacterKey()
-		local characterMoney = DataStore:GetMoney(characterKey)
-		current = current + math.min(characterMoney, data[0])
-		max     = max     + data[0]
-	end
+	-- TODO: legacy code, remove
+	if progress == 0 then
+		local data = _GetQuestProgress(character, questID)
+		for i, criteria in ipairs(data) do
+			local _, criteriaProgress = criteria:match('^(.+): ([^:]+)$')
+			if criteriaProgress then
+				local current, goal = string.split('/', criteriaProgress)
+				if current > goal then current = goal end
+				progress = progress + current/goal
+			end
+		end
+		if data[0] then -- money required
+			local characterKey = DataStore:GetCurrentCharacterKey()
+			local current = DataStore:GetMoney(characterKey)
+			local goal = data[0]
+			if current > goal then current = goal end
+			progress = progress + current/goal
+		end
 
-	if max == 0 then
-		return 0
-	else
-		return current / max
+		if progress > 0 then
+			progress = progress / (#data + (data[0] and 1 or 0))
+		end
 	end
+	return progress
 end
 
 local function UpdateQuestProgress()
+	wipe(quests.ThisCharacter.Quests)
 	local questProgress = quests.ThisCharacter.QuestProgress
 	wipe(questProgress)
-	-- local questLog = quests.ThisCharacter.QuestLog
-	-- wipe(questLog)
 
-	for questIndex = 1, (GetNumQuestLogEntries()) do
-		local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(questIndex)
+	local numRows, numQuests = GetNumQuestLogEntries()
+	for questIndex = 1, numRows do
+		local title, _, _, isHeader, _, isComplete, frequency, questID = GetQuestLogTitle(questIndex)
 
-		-- print('scanning', questIndex, GetQuestLogTitle(questIndex))
-		-- /spew DataMore_Quests.ThisCharacter.QuestProgress[29433]
-
-		if not isHeader then
+		if not isHeader and isComplete then
+			quests.ThisCharacter.Quests[questID] = 100
+		elseif not isHeader then
+			quests.ThisCharacter.Quests[questID] = {}
 			questProgress[questID] = {}
 
+			-- local progress = GetQuestProgressBarPercent(questID)
 			local requiredMoney = GetQuestLogRequiredMoney(questIndex)
 			if requiredMoney > 0 then
-				questProgress[questID][0] = math.ceil(requiredMoney/10000)
+				questProgress[questID][0] = math.ceil(requiredMoney/_G.COPPER_PER_GOLD)
+				quests.ThisCharacter.Quests[questID].requiredMoney = requiredMoney
 			end
 
 			local numObjectives = GetNumQuestLeaderBoards(questIndex)
 			for i = 1, numObjectives do
-				local text, objectiveType, finished = GetQuestLogLeaderBoard(i, questIndex)
-				if not text:find(': .-/.-') then
-					text = text .. ': ' .. (finished and 1 or 0) .. '/1'
+				-- local text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, i, false)
+				local text, objectiveType, completed = GetQuestLogLeaderBoard(i, questIndex)
+				local progress, goal = completed and 100 or 0, 100
+				if text then
+					progress, goal = text:match('(%d+)/(%d+)')
+					progress = progress and 1*progress or 0
+					goal = goal and goal*1 or 100
+				else
+					print(title, isHeader, isComplete, frequency, questID, questIndex, text, '...', GetQuestProgressBarPercent(questID), GetQuestObjectiveInfo(questID, i, false))
+				end
+				if progress ~= 0 then
+					quests.ThisCharacter.Quests[questID][i] = progress
 				end
 
-				if not finished and progressHandler[questID] and progressHandler[questID][i] then
+				-- old way of tracking quest objectives
+				if not text or not text:find('%d+/%d+') then
+					text = (text or _G.SCENARIO_BONUS_OBJECTIVES) .. ': ' .. progress .. '/' .. goal
+				end
+				if not completed and progressHandler[questID] and progressHandler[questID][i] then
 					local handler = progressHandler[questID][i][1]
 					local current, goal = handler(thisCharacter, select(2, unpack(progressHandler[questID][i])))
 					local objective = text:match('^(.+): [^:]+$')
@@ -151,9 +192,13 @@ local function UpdateQuestProgress()
 					questProgress[questID][i] = text
 				end
 			end
+
+			if not next(quests.ThisCharacter.Quests[questID]) then
+				-- zero progress is zero progress
+				quests.ThisCharacter.Quests[questID] = 0
+			end
 		end
 	end
-
 	quests.ThisCharacter.lastUpdate = time()
 end
 
@@ -165,7 +210,7 @@ local PublicMethods = {
 }
 
 function quests:OnInitialize()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', AddonDB_Defaults, true)
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
 	DataStore:RegisterModule(self.name, self, PublicMethods)
 	DataStore:SetCharacterBasedMethod('GetQuestProgress')
@@ -177,6 +222,7 @@ function quests:OnEnable()
 	self:RegisterEvent('PLAYER_ALIVE', UpdateQuestProgress)
 	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', UpdateQuestProgress)
 	-- self:RegisterEvent("QUEST_COMPLETE", UpdateQuestProgress)
+	UpdateQuestProgress()
 end
 
 function quests:OnDisable()
