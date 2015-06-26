@@ -73,7 +73,7 @@ function addon.IsBaseLink(itemLink)
 	if not itemID or linkType ~= 'item' then return end
 
 	-- @see http://wowpedia.org/ItemString
-	-- item:itemId:enchantId:jewelId1:jewelId2:jewelId3:jewelId4:suffixId:uniqueId:linkLevel:reforgeId:upgradeId
+	-- item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:uniqueID:level:UNKNOWN:upgradeID:difficulty:numBonuses:bonus1:bonus2:...
 	local _, simpleLink = GetItemInfo(itemID)
 	local cleanedLink = itemLink:gsub('item:([^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+:)[^:]+(.+)$', 'item:%10%2')
 	return cleanedLink == simpleLink

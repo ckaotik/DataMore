@@ -14,7 +14,6 @@ local playerRealm
 local DEFAULT_STATIONERY = 'Interface\\ICONS\\INV_Misc_Note_01.blp'
 local STATUS_UNREAD, STATUS_READ, STATUS_RETURNED, STATUS_RETURNED_READ = 0, 1, 2, 3
 
--- these subtables need unique identifier
 local defaults = {
 	global = {
 		Settings = {
