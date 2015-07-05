@@ -158,7 +158,7 @@ function quests.GetQuestProgressPercentage(character, questID)
 			progress = progress + criteriaProgress/goal
 			text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
 		end
-		if data.requiredMoney > 0 then
+		if (data.requiredMoney or 0) > 0 then
 			numCriteria = numCriteria + 1
 			local characterKey = DataStore:GetCurrentCharacterKey()
 			local money = DataStore:GetMoney(characterKey) or 0
