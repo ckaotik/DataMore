@@ -55,8 +55,6 @@ local function ScanQuests()
 					progress, goal = text:match('(%d+)/(%d+)')
 					progress = progress and 1*progress or 0
 					goal = goal and goal*1 or 100
-				else
-					print(title, isHeader, isComplete, frequency, questID, questIndex, text, '...', GetQuestProgressBarPercent(questID), GetQuestObjectiveInfo(questID, i, false))
 				end
 				if progress ~= 0 then
 					quests.ThisCharacter.Quests[questID][i] = progress
@@ -124,9 +122,18 @@ local progressHandler = {
 	},
 }
 
+-- returns:
+--   hasQuest 	true if quest is in character's quest log, false otherwise
+--   progress 	0 <= quest progress <= 1, 1 if completed
 function quests.GetQuestProgress(character, questID)
 	local hasQuest = rawget(character.Quests, questID)
-	local progress = quests.GetQuestProgressPercentage(character, questID)
+	local progress = 0
+	if hasQuest then
+		progress = quests.GetQuestProgressPercentage(character, questID)
+	else
+		local characterKey = DataStore:GetCurrentCharacterKey()
+		progress = DataStore:IsQuestCompletedBy(characterKey, questID) and 1 or 0
+	end
 	return hasQuest and true or false, progress
 end
 
@@ -151,7 +158,7 @@ function quests.GetQuestProgressPercentage(character, questID)
 			progress = progress + criteriaProgress/goal
 			text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
 		end
-		if data.requiredMoney then
+		if data.requiredMoney > 0 then
 			numCriteria = numCriteria + 1
 			local characterKey = DataStore:GetCurrentCharacterKey()
 			local money = DataStore:GetMoney(characterKey) or 0
