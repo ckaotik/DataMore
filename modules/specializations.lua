@@ -12,11 +12,11 @@ local defaults = {
 		Characters = {
 			['*'] = { -- character key, i.e. "Account.Realm.Name"
 				['*'] = { -- spec{specNum}
-					talents = {
-						-- [tierIndex] = talentID,
+					talents = { -- keyed by tierIndex
+						['*'] = nil, -- talentID -or- false when unselected -or- nil when not available
 					},
-					glyphs = {
-						-- [socketID] = strjoin('|', glyphID, spellID),
+					glyphs = { -- keyed by socketID
+						['*'] = nil, -- glyphID|spellID -or- '0' when empty -or- nil when not available
 					},
 					specID = nil,
 					mastery = nil,
@@ -61,7 +61,11 @@ local function ScanTalents()
 				column = column + 1
 				talentID, name, texture, selected, available = GetTalentInfo(tier, column, specNum)
 			end
-			data.talents[tier] = not isUnspent and selection or false
+			if available and isUnspent then
+				data.talents[tier] = false
+			else
+				data.talents[tier] = selection or nil
+			end
 		end
 	end
 	character.activeSpecGroup = GetActiveSpecGroup()
@@ -77,12 +81,10 @@ local function ScanGlyphs()
 
 		for socket = 1, GetNumGlyphSockets() do
 			local isAvailable, _, _, spellID, _, glyphID = GetGlyphSocketInfo(socket, specNum)
-			if not isAvailable then
-				specData.glyphs[socket] = nil
-			elseif not glyphID then
-				specData.glyphs[socket] = '0'
-			else
+			if isAvailable and glyphID then
 				specData.glyphs[socket] = strjoin('|', glyphID, spellID or '')
+			else
+				specData.glyphs[socket] = isAvailable and '0' or nil
 			end
 		end
 	end
@@ -262,7 +264,7 @@ local PublicMethods = {
 	GetTreeNameByID      = _GetTreeNameByID,
 	GetTalentRank        = _GetTalentRank,
 }
-local nonCharacterMethods = { 'GetClassTrees',  'GetTreeInfo',  'GetTreeNameByID'}
+local nonCharacterMethods = { 'GetClassTrees', 'GetTreeInfo', 'GetTreeNameByID'}
 
 function specializations:OnInitialize()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
