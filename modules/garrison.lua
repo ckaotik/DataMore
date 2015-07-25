@@ -2,7 +2,9 @@ local addonName, addon, _ = ...
 local garrison = addon:NewModule('Garrison', 'AceEvent-3.0')
 
 -- TODO: store invasions & history
--- TODO: store mission basic data (icon, ...)
+-- TODO: track weekly garrison CDs
+--   * inn recruits: C_Garrison.CanGenerateRecruits()
+--   * invasion & boss invasion
 
 -- GLOBALS: _G, LibStub, DataStore, C_Garrison
 -- GLOBALS: wipe, pairs, ipairs, next, strsplit, strjoin, time
@@ -33,7 +35,7 @@ local defaults = {
 				},
 				MissionHistory = { -- only tracks rare missions
 					['*'] = { -- keyed by missionID
-						-- string: 'start:end:chance:success:follower1:follower2:follower3:speedFactor:goldFactor:resourceFactor'
+						-- string: 'start|end|chance|success|follower1:follower2:follower3|speedFactor|goldFactor|resourceFactor'
 					},
 				},
 			},
@@ -71,6 +73,7 @@ local buildingNames = {
 	[111] = 'TradingPost',
 	[159] = 'GladiatorsSanctum',
 	[162] = 'GnomishGearworks',
+	[205] = 'Shipyard',
 }
 local buildingMap = {}
 for buildingID, identifier in pairs(buildingNames) do
@@ -112,9 +115,26 @@ local objectMap = {
 	[237027] = 111, -- Trading Post Shipment (Alliance)
 }
 
-local function PruneDB()
-	-- TODO: remove old MissionHistory entries
-	-- TODO: remove unused Mission data
+local function PruneDB(db)
+	-- remove old history data
+	for character, data in pairs(db.global.Characters) do
+		for missionID, history in pairs(data.MissionHistory) do
+			for i = 4, #history do rawset(history, i, nil) end
+		end
+	end
+	-- remove static mission data on missions no character has
+	for missionID, _ in pairs(db.global.Missions) do
+		local isActive = false
+		for characterKey, data in pairs(db.global.Characters) do
+			if rawget(data.Missions, missionID) or rawget(data.MissionHistory, missionID) then
+				isActive = true
+				break
+			end
+		end
+		if not isActive then
+			rawset(db.global.Missions, missionID, nil)
+		end
+	end
 end
 
 -- --------------------------------------------------------
@@ -153,7 +173,7 @@ local function ScanShipments(event, updatedPlotID)
 	garrison.ThisCharacter.lastUpdate = time()
 end
 local function ScanShipmentLoot(event)
-	if not C_Garrison.IsOnGarrisonMap() then return end
+	if not C_Garrison.IsOnGarrisonMap() and not C_Garrison.IsOnShipyardMap() then return end
 	local source = GetLootSourceInfo(1)
 	local guidType, _, _, _, _, id = strsplit('-', source)
 	if guidType == 'GameObject' then
@@ -242,11 +262,17 @@ end
 function garrison:GARRISON_FOLLOWER_UPGRADED(event, followerID)
 	ScanFollower(followerID)
 end
-function garrison:GARRISON_FOLLOWER_ADDED(event, followerID)
+function garrison:GARRISON_FOLLOWER_ADDED(event, followerID, name, class, displayID, level, quality, isUpgraded, texPrefix, followerType)
 	ScanFollower(followerID)
+	if followerType == _G.LE_FOLLOWER_TYPE_SHIPYARD_6_2 then
+		-- ship was collected from shipyard
+		C_Garrison.RequestLandingPageShipmentInfo()
+		garrison:SendMessage('DATAMORE_GARRISON_SHIPMENT_COLLECTED', buildingMap.Shipyard)
+	end
 end
-function garrison:GARRISON_FOLLOWER_REMOVED(event, followerID)
-	local followerLink   = C_Garrison.GetFollowerLink(followerID)
+function garrison:GARRISON_FOLLOWER_REMOVED(event, followerID, ...)
+	local followerLink = followerID and C_Garrison.GetFollowerLink(followerID)
+	if not followerID or not followerLink then ScanFollowers() return end
 	local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
 	self.ThisCharacter.Followers[garrFollowerID] = nil
 end
@@ -273,7 +299,6 @@ local function ScanMission(missionID, timeLeft)
 	garrison.ThisCharacter.Missions[missionID] = strtrim(missionInfo, '|')
 
 	-- store general information about this mission not available via C_Garrison API
-	-- name: .GetMissionName, numFollowers: .GetMissionMaxFollowers, rewards: .GetMissionRewardInfo
 	local missionInfo = strjoin('|', mission.type, mission.location, mission.level, mission.iLevel, mission.durationSeconds, mission.isRare and 1 or 0, mission.cost, mission.typeAtlas, mission.locPrefix)
 	garrison.db.global.Missions[missionID] = strtrim(missionInfo, '|')
 end
@@ -330,7 +355,7 @@ local function ScanMissions()
 			end
 			if not exists then
 				-- mission has been collected elsewhere
-				local _, _, _, _, _, duration, isRare = garrison.GetBasicMissionInfo(missionID)
+				local _, _, _, _, _, _, duration, isRare = garrison.GetBasicMissionInfo(missionID)
 				local timestamp, successChance, missionFollowers = strsplit('|', info)
 				      timestamp, successChance = timestamp * 1, successChance * 1
 
@@ -369,30 +394,55 @@ function garrison:GARRISON_MISSION_STARTED(event, missionID)
 	-- update status and followers
 	ScanMission(missionID)
 end
-function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, success)
-	local _, _, _, _, _, durationSeconds, isRare, _, _, followers = garrison.GetBasicMissionInfo(missionID)
-	if durationSeconds and isRare then
-		-- only logging rare missions
-		local missionFollowers, goldBoost, resourceBoost = '', 0, 0
-		for followerIndex = 1, 3 do
-			local garrFollowerID = followers and followers[followerIndex]
-			if garrFollowerID then
-				for traitIndex = 1, 3 do
-					local traitID = C_Garrison.GetFollowerTraitAtIndexByID(garrFollowerID, traitIndex)
-					goldBoost     =     goldBoost + (traitID == 256 and 1 or 0)
-					resourceBoost = resourceBoost + (traitID ==  79 and 1 or 0)
+function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, success, followers)
+	local completes, successChance = strsplit('|', self.ThisCharacter.Missions[missionID])
+	local _, _, _, _, _, _, duration, isRare = self.GetBasicMissionInfo(missionID)
+	local _, durationSeconds, hasTimeMultiplier, chance, partyBuffs, environmentCounter, _, currencyMultipliers, goldMultiplier = C_Garrison.GetPartyMissionInfo(missionID)
+	local timeMultiplier, resourceMultiplier
+
+	if success then
+		successChance = chance
+		resourceMultiplier = currencyMultipliers and currencyMultipliers[824] or 1
+		for _, v in pairs(partyBuffs) do
+			if v == 221 or v == 289 or v == 288 or v == 250 then
+				-- epic mount, blood elf crew, night elf crew, speed of light
+				timeMultiplier = (timeMultiplier or 0) + 1
+			end
+		end
+	else
+		for _, follower in pairs(followers) do
+			for i = 1, 2*4 do
+				local func = i > 4 and 'GetFollowerTraitAtIndex' or 'GetFollowerAbilityAtIndex'
+				local index = i > 4 and i - 4 or i
+				local abilityID = C_Garrison[func](follower.followerID, index)
+				if abilityID == 221 or abilityID == 289 or abilityID == 288 or abilityID == 250 then
+					-- epic mount, blood elf crew, night elf crew, speed of light
+					timeMultiplier = (timeMultiplier or 0) + 1
+				elseif abilityID == 79 --[[or abilityID == 314 or abilityID == 326--]] then
+					-- scavenger, grease monkey, apexis attenuation
+					resourceMultiplier = (resourceMultiplier or 0) + 1
+				elseif abilityID == 256 or abilityID == 283 or abilityID == 286 then
+					-- treasure hunter, dwarven crew, goblin crew
+					goldMultiplier = (goldMultiplier or 0) + 1
 				end
 			end
-			missionFollowers = (missionFollowers ~= '' and missionFollowers..':' or '') .. (garrFollowerID or 0)
+		end
+		durationSeconds = duration / (timeMultiplier or 1)
+	end
+
+	if isRare and durationSeconds then
+		-- only logging rare missions
+		local now = time()
+		local startTime = (tonumber(completes or '') or now) - durationSeconds
+		local missionFollowers
+		for followerIndex = 1, 3 do
+			local followerID = followers[followerIndex] and followers[followerIndex].followerID
+			local garrFollowerID = followerID and C_Garrison.GetFollowerLink(followerID):match('%d+') or 0
+			missionFollowers = (missionFollowers and missionFollowers..':' or '') .. garrFollowerID
 		end
 
-		local successChance = C_Garrison.GetRewardChance(missionID)
-			or (GarrisonMissionFrame.MissionComplete.ChanceFrame.ChanceText:GetText():match('%d+') * 1)
-		local duration  = select(5, C_Garrison.GetMissionTimes(missionID)) or durationSeconds
-		local startTime = (self.ThisCharacter.Missions[missionID].timestamp or duration) - duration
-
-		local missionInfo = strjoin('|', startTime, time(), successChance, success and 1 or 0, missionFollowers, durationSeconds/duration, goldBoost, resourceBoost)
-		self.ThisCharacter.MissionHistory[missionID] = self.ThisCharacter.MissionHistory[missionID] or {}
+		local missionInfo = strjoin('|', startTime, now, successChance or 0, success and 1 or 0, missionFollowers or '', timeMultiplier or 1, goldMultiplier or 1, resourceMultiplier or 1)
+		-- self.ThisCharacter.MissionHistory[missionID] = self.ThisCharacter.MissionHistory[missionID] or {}
 		table.insert(self.ThisCharacter.MissionHistory[missionID], missionInfo)
 	end
 	-- remove mission from active list
@@ -411,13 +461,26 @@ function garrison.GetLastResourceCollectionTime(character)
 	return character.lastResourceCollection
 end
 
+local capacityUpgrades = {
+	-- [38445] =  750, -- The Assault Base (Alliance)
+	-- [37935] =  750, -- The Assault Base (Horde)
+	[37485] = 1000, -- Trade Agreement: Arakkoa Outcasts
+}
 function garrison.GetUncollectedResources(character)
 	local timestamp = garrison.GetLastResourceCollectionTime(character)
 	if not timestamp then return 0 end
 
+	local cacheCapacity = 500
+	local characterKey = DataStore:GetCurrentCharacterKey()
+	for questID, capacity in pairs(capacityUpgrades) do
+		if DataStore:IsQuestCompletedBy(characterKey, questID) then
+			cacheCapacity = math.max(cacheCapacity, capacity)
+		end
+	end
+
 	-- cache generates 1 resource per 10 minutes
 	local resources = math.floor((time()-timestamp)/(10*60))
-	return math.min(500, resources)
+	return math.min(cacheCapacity, resources), cacheCapacity
 end
 
 function garrison.GetMissionTableLastVisit(character)
@@ -445,11 +508,12 @@ end
 function garrison.GetFollowers(character)
 	wipe(returnTable)
 	for garrFollowerID, followerData in pairs(character.Followers) do
+		local followerType = C_Garrison.GetFollowerTypeByID(garrFollowerID)
 		local linkData, inactive, xp = strsplit('|', followerData)
 		local _, quality, level = strsplit(':', linkData)
 		local levelXP = level == GARRISON_FOLLOWER_MAX_LEVEL
-			and C_Garrison.GetFollowerQualityTable()[quality]
-			or C_Garrison.GetFollowerXPTable()[level]
+			and C_Garrison.GetFollowerQualityTable(followerType)[quality]
+			or C_Garrison.GetFollowerXPTable(followerType)[level]
 		returnTable[garrFollowerID] = {
 			isInactive = inactive == '1',
 			link    = garrison.GetFollowerLink(character, garrFollowerID),
@@ -482,7 +546,8 @@ function garrison.GetFollowerInfo(character, garrFollowerID)
 	skill1, skill2, skill3, skill4 = skill1*1, skill2*1, skill3*1, skill4*1
 	trait1, trait2, trait3, trait4 = trait1*1, trait2*1, trait3*1, trait4*1
 
-	local levelXP = level == GARRISON_FOLLOWER_MAX_LEVEL and C_Garrison.GetFollowerQualityTable()[quality] or C_Garrison.GetFollowerXPTable()[level]
+	local followerType = C_Garrison.GetFollowerTypeByID(garrFollowerID)
+	local levelXP = level == GARRISON_FOLLOWER_MAX_LEVEL and C_Garrison.GetFollowerQualityTable(followerType)[quality] or C_Garrison.GetFollowerXPTable(followerType)[level]
 
 	return quality, level, iLevel, skill1, skill2, skill3, skill4, trait1, trait2, trait3, trait4, xp, levelXP, inactive == '1'
 end
@@ -659,13 +724,12 @@ local function AddFollower(followerID) tinsert(followers, followerID*1) end
 -- returns static, non character-based mission data
 function garrison.GetBasicMissionInfo(missionID)
 	wipe(followers)
-	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix
+	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix, followerType
 	local info = C_Garrison.GetBasicMissionInfo(missionID)
 	if info then
-		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = info.type, info.location, info.level, info.iLevel, info.durationSeconds, info.isRare, info.cost, info.typeAtlas, info.locPrefix
+		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix, followerType = info.type, info.location, info.level, info.iLevel, info.durationSeconds, info.isRare, info.cost, info.typeAtlas, info.locPrefix, info.followerTypeID
 		for k, followerID in pairs(info.followers) do
-			local followerLink   = C_Garrison.GetFollowerLink(followerID)
-			local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
+			local garrFollowerID = tonumber(C_Garrison.GetFollowerLink(followerID):match('%d+') or '')
 			followers[k] = garrFollowerID
 		end
 	else
@@ -675,8 +739,15 @@ function garrison.GetBasicMissionInfo(missionID)
 		local missionFollowers = select(3, strsplit('|', missionInfo)) or ''
 		missionFollowers:gsub('[^:]+', AddFollower)
 		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
+		isRare = isRare == '1' and true or false
+		level, iLevel, duration, cost = level or 0, iLevel or 0, duration or 0, cost or 0
+		if typeAtlas and typeAtlas:lower():find('shipmission') then
+			followerType = _G.LE_FOLLOWER_TYPE_SHIPYARD_6_2
+		else
+			followerType = _G.LE_FOLLOWER_TYPE_GARRISON_6_0
+		end
 	end
-	return missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare == '1' and true or false, locPrefix, location, followers
+	return followerType, missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare, locPrefix, location, followers
 end
 
 function garrison.GetMissionInfo(character, missionID)
@@ -691,14 +762,14 @@ function garrison.GetMissionInfo(character, missionID)
 	wipe(followers)
 	missionFollowers:gsub('[^:]+', AddFollower)
 
-	local missionType, typeAtlas, level, ilevel, cost, duration = garrison.GetBasicMissionInfo(missionID)
-	return missionType, typeAtlas, level, ilevel, cost, duration, followers, remainingTime, successChance
+	local followerType, missionType, typeAtlas, level, ilevel, cost, duration = garrison.GetBasicMissionInfo(missionID)
+	return missionType, typeAtlas, level, ilevel, cost, duration, followers, remainingTime, successChance, followerType
 end
 
 function garrison.GetGarrisonMissionExpiry(character, missionID)
 	local mission = character.Missions[missionID]
 	local expires = strsplit('|', mission)
-	return expires*1
+	return tonumber(expires or 0)
 end
 
 function garrison.GetMissions(character, scope)
@@ -781,7 +852,7 @@ end
 function garrison.IteratePlots(character, includeEmpty)
 	local plots, key = character.Plots, nil
 	return function()
-		local buildingID, rank, completes, followerID, canUpgrade
+		local plotID, buildingID, rank, completes, followerID, canUpgrade
 		repeat
 			key = next(plots, key)
 			plotID, buildingID, rank, followerID, canUpgrade, completes = garrison.GetPlotInfo(character, key)
@@ -933,7 +1004,7 @@ function garrison:OnEnable()
 			-- don't store empty data sets for characters without garrisons
 			self.ThisCharacter.lastUpdate = self.ThisCharacter.lastUpdate or time()
 
-			PruneDB()
+			PruneDB(self.db)
 		end
 		self:UnregisterEvent(event)
 		self:RegisterEvent(event)
