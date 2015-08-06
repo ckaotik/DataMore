@@ -1,6 +1,8 @@
 local addonName, addon, _ = ...
 local mails = addon:NewModule('Mails', 'AceEvent-3.0', 'AceComm-3.0', 'AceSerializer-3.0')
 
+-- TODO: add "inbox mail" on successfull purchase on auction house
+
 local commPrefix = 'DS_Mails'
 local MSG_SENDMAIL_INIT, MSG_SENDMAIL_END, MSG_SENDMAIL_ATTACHMENT, MSG_SENDMAIL_BODY = 1, 2, 3, 4
 
