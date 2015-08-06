@@ -1,8 +1,8 @@
-## Interface: 60100
+## Interface: 60200
 ## Title: DataMore
 ## Notes: Stores additional character data in DataStore
 ## Author: ckaotik
-## Version: 6.1v0
+## Version: 6.2v0
 
 ## Dependencies: DataStore
 ## OptionalDeps: DataStore_Characters, DataStore_Achievements, DataStore_Auctions, DataStore_Containers, DataStore_Crafts, DataStore_Currencies, DataStore_Garrisons, DataStore_Inventory, DataStore_Mails, DataStore_Pets, DataStore_Quests, DataStore_Reputations, DataStore_Spells, DataStore_Stats, DataStore_Talents
@@ -34,4 +34,3 @@ modules\lockouts.lua
 modules\mails.lua
 modules\quests.lua
 modules\specializations.lua
-modules\timers.lua
