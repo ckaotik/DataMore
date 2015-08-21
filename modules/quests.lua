@@ -84,6 +84,7 @@ function quests.GetAchievementProgress(character, achievementID)
 
 	for index = 1, GetAchievementNumCriteria(achievementID) do
 		local _, _, _, _, requiredQuantity,_, _, _, quantityString = GetAchievementCriteriaInfo(achievementID, index)
+		quantityString = quantityString:gsub(LARGE_NUMBER_SEPERATOR, '')
 		local requiredQuantityString = tonumber( quantityString:match('/%s*(%d+)') or '' )
 		if requiredQuantityString and requiredQuantityString ~= requiredQuantity then
 			-- fix currencies being multiplied by 100

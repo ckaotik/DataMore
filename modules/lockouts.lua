@@ -174,7 +174,7 @@ function lockouts.IterateLFGs(character, typeID, subTypeID)
 				lfgType  = next(LFGInfos, lfgType)
 				lfgIndex = 0
 			elseif (typeID and typeID ~= instanceType) or (subTypeID and subTypeID ~= instanceSubType) then
-				-- instance does not math specified types
+				-- instance does not match specified types
 				lfgIndex = lfgIndex + 1
 			else
 				-- found a match!
