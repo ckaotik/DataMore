@@ -193,14 +193,11 @@ function quests:OnInitialize()
 end
 
 function quests:OnEnable()
-	self:RegisterEvent('PLAYER_ALIVE', ScanQuests)
+	-- TODO: what about QUEST_COMPLETE?
 	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', ScanQuests)
-	-- self:RegisterEvent("QUEST_COMPLETE", ScanQuests)
 	ScanQuests()
 end
 
 function quests:OnDisable()
-	self:UnregisterEvent('PLAYER_ALIVE')
 	self:UnregisterEvent('UNIT_QUEST_LOG_CHANGED')
-	-- self:UnregisterEvent("QUEST_COMPLETE")
 end
