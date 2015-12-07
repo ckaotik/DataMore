@@ -18,15 +18,6 @@ local defaults = {
 	}
 }
 
-local function GetReputationProgress(character, faction, minReputation)
-	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
-
-	local factionName = GetFactionInfoByID(faction)
-	local _, _, currentReputation = DataStore:GetRawReputationInfo(characterKey, factionName)
-
-	return currentReputation, minReputation
-end
-
 local function ScanQuests()
 	wipe(quests.ThisCharacter.Quests)
 
@@ -98,6 +89,15 @@ function quests.GetAchievementProgress(character, achievementID)
 	return achievementProgress, achievementGoal, isShared
 end
 
+local function GetReputationProgress(character, faction, minReputation)
+	local characterKey = type(character) == 'string' and character or DataStore:GetCurrentCharacterKey()
+
+	local factionName = GetFactionInfoByID(faction)
+	local _, _, currentReputation = DataStore:GetRawReputationInfo(characterKey, factionName)
+
+	return currentReputation, minReputation
+end
+
 -- [questID][criteriaIndex] = {handler, args, ...}
 local progressHandler = {
 	[32474] = { -- test of valor (alliance)
@@ -147,7 +147,7 @@ function quests.GetQuestProgressPercentage(character, questID)
 		progress = data/100
 	elseif data then
 		local numCriteria = 0
-		local text, objectiveType, completed, FALSE = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
+		local text, objectiveType, completed = GetQuestObjectiveInfo(questID, numCriteria + 1, false)
 		while objectiveType do
 			numCriteria = numCriteria + 1
 			local criteriaProgress = data[numCriteria] or 0
@@ -181,6 +181,20 @@ local PublicMethods = {
 	GetQuestProgress = quests.GetQuestProgress,
 	GetQuestProgressPercentage = quests.GetQuestProgressPercentage,
 	GetAchievementProgress = quests.GetAchievementProgress, -- TODO: FIXME: does not belong here
+
+	--[[ DataStore's Quest API:
+	GetQuestLogSize
+	GetQuestLogInfo
+	GetQuestLogNumRewards
+	GetQuestLogRewardInfo
+	GetQuestInfo
+	QueryQuestHistory
+	GetQuestHistory
+	GetQuestHistoryInfo
+	IsQuestCompletedBy
+	GetDailiesHistory
+	GetDailiesHistorySize
+	GetDailiesHistoryInfo --]]
 }
 
 function quests:OnInitialize()
@@ -193,11 +207,22 @@ function quests:OnInitialize()
 end
 
 function quests:OnEnable()
-	-- TODO: what about QUEST_COMPLETE?
-	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', ScanQuests)
-	ScanQuests()
+	self:RegisterEvent('UNIT_QUEST_LOG_CHANGED', function(event, unit, ...)
+		if unit == 'player' then ScanQuests() end
+	end)
+
+	local firstTrigger = true
+	self:RegisterEvent('QUEST_LOG_UPDATE', function(event, ...)
+		-- first login does not have quest log info
+		if GetNumQuestLogEntries() > 0 or not firstTrigger then
+			self:UnregisterEvent(event)
+			ScanQuests()
+		end
+		firstTrigger = nil
+	end)
 end
 
 function quests:OnDisable()
 	self:UnregisterEvent('UNIT_QUEST_LOG_CHANGED')
+	self:UnregisterEvent('QUEST_LOG_UPDATE')
 end
