@@ -166,7 +166,8 @@ local function ScanProfessions()
 		profession.rank = rank
 		profession.maxRank = maxRank
 
-		local spellIndex = spellOffset + numSpells - specOffset
+		-- TODO/FIXME: this is incorrect
+		local spellIndex = spellOffset + numSpells
 		local spellLink, tradeLink = GetSpellLink(spellIndex, _G.BOOKTYPE_PROFESSION)
 		local spellID = addon.GetLinkID(spellLink)
 		profession.spell = spellID
@@ -222,9 +223,11 @@ end
 
 -- TODO: API functionality
 function plugin.GetProfessions(character)
+	if not character.Professions then return {} end
+
 	local prof1, prof2 = nil, nil
 	for i, skillLine in ipairs(primaryProfessions) do
-		if character.Professions[skillLine] then
+		if character.Professions[skillLine].rank > 0 then
 			if not prof1 then
 				prof1 = skillLine
 			else
@@ -234,13 +237,13 @@ function plugin.GetProfessions(character)
 		end
 	end
 	local arch, fish, cook, firstAid = 794, 356, 184, 129
-	return prof1, prof2, arch, fish, cook, firstAid
+	return {prof1, prof2, arch, fish, cook, firstAid}
 end
 
 function plugin.GetProfessionInfo(character, profSkillLine)
 	for skillLine, info in pairs(character.Professions) do
 		if skillLine == profSkillLine then
-			return info.rank or 0, info.maxRank or 0, info.spell
+			return info.rank or 0, info.maxRank or 0, info.spell or skillLineMappings[skillLine]
 		end
 	end
 end
@@ -276,7 +279,7 @@ function plugin.GetCraftCooldownInfo(character, skillLine, recipeID)
 		skillLine = nil
 	end
 	local expires = character.Cooldowns[recipeID] or 0
-	local name = GetSpellName(recipeID)
+	local name = GetSpellInfo(recipeID)
 	local expiresIn = expires - time()
 	return name, expiresIn > 0 and expiresIn or 0, expires, time()
 end
@@ -284,7 +287,7 @@ end
 function plugin:OnInitialize()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
-	DataStore:RegisterModule(self.name, self, {
+	local methods = {
 		GetProfessions = self.GetProfessions,
 		GetProfessionInfo = self.GetProfessionInfo,
 		GetNumCraftLines = self.GetNumCraftLines,
@@ -293,10 +296,10 @@ function plugin:OnInitialize()
 		GetCraftCooldownInfo = self.GetCraftCooldownInfo,
 
 		-- legacy support
-		GetCookingRank     = function(character) return self.GetProfessionInfo(character, 184) end),
-		GetFishingRank     = function(character) return self.GetProfessionInfo(character, 356) end),
-		GetFirstAidRank    = function(character) return self.GetProfessionInfo(character, 129) end),
-		GetArchaeologyRank = function(character) return self.GetProfessionInfo(character, 794) end),
+		GetCookingRank     = function(character) return self.GetProfessionInfo(character, 184) end,
+		GetFishingRank     = function(character) return self.GetProfessionInfo(character, 356) end,
+		GetFirstAidRank    = function(character) return self.GetProfessionInfo(character, 129) end,
+		GetArchaeologyRank = function(character) return self.GetProfessionInfo(character, 794) end,
 		GetProfession1 = function(character)
 			for _, skillLine in ipairs(primaryProfessions) do
 				if character.Professions[skillLine] then
@@ -313,8 +316,8 @@ function plugin:OnInitialize()
 				prof1 = prof1 or character.Professions[skillLine]
 			end
 		end,
-		GetProfession = function(character, name) return (GetSkillLineByName(name)) end
-		GetProfessionSpellID = function(name) return select(2, GetSkillLineByName(name)) end),
+		GetProfession = function(character, name) return (GetSkillLineByName(name)) end,
+		GetProfessionSpellID = function(name) return select(2, GetSkillLineByName(name)) end,
 		ClearExpiredCooldowns = nop,
 
 		--[[
@@ -327,10 +330,14 @@ function plugin:OnInitialize()
 		GetGuildCrafters = _GetGuildCrafters(guild),
 		GetGuildMemberProfession = _GetGuildMemberProfession(guild, member, index),
 		--]]
-	}, true)
-	DataStore:SetCharacterBasedMethod('IsCraftKnown')
-	DataStore:SetCharacterBasedMethod('GetNumCraftLines')
-	DataStore:SetCharacterBasedMethod('GetCraftCooldownInfo')
+	}
+
+	DataStore:RegisterModule(self.name, self, methods, true)
+	for methodName in pairs(methods) do
+		if methodName ~= 'ClearExpiredCooldowns' and methodName ~= 'GetProfessionSpellID' then
+			DataStore:SetCharacterBasedMethod(methodName)
+		end
+	end
 end
 
 local function OnTradeSkillShow()
