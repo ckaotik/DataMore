@@ -29,7 +29,7 @@ local scanTooltip = CreateFrame('GameTooltip', 'DataMoreScanTooltip', nil, 'Game
 local glyphNameByID = setmetatable({}, {
 	__index = function(self, id)
 		scanTooltip:SetOwner(_G.UIParent, 'ANCHOR_NONE')
-		scanTooltip:SetHyperlink('glyph:'..id)
+		scanTooltip:SetGlyphByID(id)
 		local name = _G[scanTooltip:GetName()..'TextLeft1']:GetText()
 		scanTooltip:Hide()
 		if name and name ~= _G.EMPTY then
