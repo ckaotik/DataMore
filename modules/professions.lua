@@ -144,7 +144,7 @@ local function RestoreFilters()
 	SelectTradeSkill(filters.selected)
 end
 local function RemoveFilters()
-	ExpandTradeSkillSubClass(0) -- TODO: isn't currently saved/restored
+	ExpandTradeSkillSubClass(0)
 	SetTradeSkillItemLevelFilter(0, 0)
     SetTradeSkillItemNameFilter(nil)
     TradeSkillSetFilter(-1, -1)
@@ -166,8 +166,7 @@ local function ScanProfessions()
 		profession.rank = rank
 		profession.maxRank = maxRank
 
-		-- TODO/FIXME: this is incorrect
-		local spellIndex = spellOffset + numSpells
+		local spellIndex = spellOffset + (specOffset == 1 and 2 or 1)
 		local spellLink, tradeLink = GetSpellLink(spellIndex, _G.BOOKTYPE_PROFESSION)
 		local spellID = addon.GetLinkID(spellLink)
 		profession.spell = spellID
