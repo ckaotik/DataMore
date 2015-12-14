@@ -66,6 +66,8 @@ local skillLineMappings = {
 local primaryProfessions = {171, 164, 333, 202, 773, 755, 165, 197, 182, 186, 393}
 local secondaryProfessions = {794, 184, 129, 356}
 
+local returnTable
+
 local function GetSkillLineByName(skillName)
 	for skillLine, spellID in pairs(skillLineMappings) do
 		if skillName == GetSpellInfo(spellID) then
@@ -240,11 +242,16 @@ function plugin.GetProfessions(character)
 end
 
 function plugin.GetProfessionInfo(character, profSkillLine)
-	for skillLine, info in pairs(character.Professions) do
-		if skillLine == profSkillLine then
-			return info.rank or 0, info.maxRank or 0, info.spell or skillLineMappings[skillLine]
-		end
+	local profession = character.Professions[profSkillLine]
+	if profession then
+		return profession.rank or 0, profession.maxRank or 0, profession.spell or skillLineMappings[skillLine] or nil, profession.specialization
 	end
+	return 0, 0, 0, nil
+end
+
+function plugin.GetProfessionTradeLink(character, profSkillLine)
+	local profession = character.Professions[profSkillLine]
+	return profession and profession.link or ''
 end
 
 function plugin.IsCraftKnown(character, skillLine, recipeID)
@@ -260,16 +267,20 @@ function plugin.GetNumCraftLines(character, skillLine)
 end
 
 function plugin.GetNumActiveCooldowns(character, skillLine)
-	local now = time()
-	local count = 0
+	local cooldowns = plugin.GetProfessionCooldowns(character, skillLine)
+	return #cooldowns
+end
+
+function plugin.GetProfessionCooldowns(character, skillLine)
+	wipe(returnTable)
 	for recipeID, expires in pairs(character.Cooldowns) do
 		if expires >= now then
 			if not skillLine or (character.Recipes[skillLine] and character.Recipes[skillLine][recipeID]) then
-				count = count + 1
+				returnTable[recipeID] = expires
 			end
 		end
 	end
-	return count
+	return returnTable
 end
 
 function plugin.GetCraftCooldownInfo(character, skillLine, recipeID)
@@ -289,6 +300,8 @@ function plugin:OnInitialize()
 	local methods = {
 		GetProfessions = self.GetProfessions,
 		GetProfessionInfo = self.GetProfessionInfo,
+		GetProfessionTradeLink = self.GetProfessionTradeLink,
+		GetProfessionCooldowns = self.GetProfessionCooldowns,
 		GetNumCraftLines = self.GetNumCraftLines,
 		IsCraftKnown = self.IsCraftKnown,
 		GetNumActiveCooldowns = self.GetNumActiveCooldowns,
