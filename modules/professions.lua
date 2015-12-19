@@ -66,7 +66,7 @@ local skillLineMappings = {
 local primaryProfessions = {171, 164, 333, 202, 773, 755, 165, 197, 182, 186, 393}
 local secondaryProfessions = {794, 184, 129, 356}
 
-local returnTable
+local emptyTable, returnTable = {}, {}
 
 local function GetSkillLineByName(skillName)
 	for skillLine, spellID in pairs(skillLineMappings) do
@@ -249,8 +249,8 @@ function plugin.GetProfessionInfo(character, profSkillLine)
 	return 0, 0, 0, nil
 end
 
-function plugin.GetProfessionTradeLink(character, profSkillLine)
-	local profession = character.Professions[profSkillLine]
+function plugin.GetProfessionTradeLink(character, skillLine)
+	local profession = character.Professions[skillLine]
 	return profession and profession.link or ''
 end
 
@@ -260,10 +260,24 @@ end
 
 function plugin.GetNumCraftLines(character, skillLine)
 	local count = 0
-	for recipeID, crafted in pairs(character.Recipes[skillLine]) do
+	for _ in pairs(character.Recipes[skillLine]) do
 		count = count + 1
 	end
 	return count
+end
+
+function plugin.GetCraftLineInfo(character, skillLine, index)
+	-- note: index does not match book index!
+	local recipes = character.Recipes[skillLine] or emptyTable
+	local i = 0
+	for spellID, crafted in pairs(recipes) do
+		i = i + 1;
+		if i > index then break end
+		if i == index then
+			return false, nil, spellID
+		end
+	end
+	return nil
 end
 
 function plugin.GetNumActiveCooldowns(character, skillLine)
@@ -306,6 +320,7 @@ function plugin:OnInitialize()
 		IsCraftKnown = self.IsCraftKnown,
 		GetNumActiveCooldowns = self.GetNumActiveCooldowns,
 		GetCraftCooldownInfo = self.GetCraftCooldownInfo,
+		GetCraftLineInfo = self.GetCraftLineInfo,
 
 		-- legacy support
 		GetCookingRank     = function(character) return self.GetProfessionInfo(character, 184) end,
@@ -333,7 +348,6 @@ function plugin:OnInitialize()
 		ClearExpiredCooldowns = nop,
 
 		--[[
-		GetCraftLineInfo = _GetCraftLineInfo(profession, index),
 		GetNumRecipesByColor = _GetNumRecipesByColor(profession),
 		GetArchaeologyRaceArtifacts = _GetArchaeologyRaceArtifacts(race),
 		GetRaceNumArtifacts = _GetRaceNumArtifacts(race),
