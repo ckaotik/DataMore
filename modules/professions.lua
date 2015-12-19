@@ -255,7 +255,7 @@ function plugin.GetProfessionTradeLink(character, skillLine)
 end
 
 function plugin.IsCraftKnown(character, skillLine, recipeID)
-	return character.Recipes[skillLine][recipeID] and true or false
+	return (character.Recipes[skillLine] and character.Recipes[skillLine][recipeID]) and true or false
 end
 
 function plugin.GetNumCraftLines(character, skillLine)
