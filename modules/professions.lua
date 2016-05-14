@@ -162,22 +162,24 @@ local function ScanProfessions()
 	local numProfessions = select('#', GetProfessions())
 	for i = 1, numProfessions do
 		local index = select(i, GetProfessions())
-		local name, icon, rank, maxRank, numSpells, spellOffset, skillLine, rankModifier, specIndex, specOffset = GetProfessionInfo(index)
+		if index then
+			local name, icon, rank, maxRank, numSpells, spellOffset, skillLine, rankModifier, specIndex, specOffset = GetProfessionInfo(index)
 
-		local profession = professions[skillLine]
-		profession.rank = rank
-		profession.maxRank = maxRank
+			local profession = professions[skillLine]
+			profession.rank = rank
+			profession.maxRank = maxRank
 
-		local spellIndex = spellOffset + (specOffset == 1 and 2 or 1)
-		local spellLink, tradeLink = GetSpellLink(spellIndex, _G.BOOKTYPE_PROFESSION)
-		local spellID = addon.GetLinkID(spellLink)
-		profession.spell = spellID
-		profession.link = tradeLink
+			local spellIndex = spellOffset + (specOffset == 1 and 2 or 1)
+			local spellLink, tradeLink = GetSpellLink(spellIndex, _G.BOOKTYPE_PROFESSION)
+			local spellID = addon.GetLinkID(spellLink)
+			profession.spell = spellID
+			profession.link = tradeLink
 
-		if specIndex > -1 then
-			spellLink = GetSpellLink(spellOffset + specOffset, _G.BOOKTYPE_PROFESSION)
-			spellID = addon.GetLinkID(spellLink)
-			profession.specialization = spellID
+			if specIndex > -1 then
+				spellLink = GetSpellLink(spellOffset + specOffset, _G.BOOKTYPE_PROFESSION)
+				spellID = addon.GetLinkID(spellLink)
+				profession.specialization = spellID
+			end
 		end
 	end
 	plugin.ThisCharacter.lastUpdate = time()
