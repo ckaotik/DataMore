@@ -200,7 +200,7 @@ local function ScanPlot(plotID)
 end
 
 local function ScanPlots()
-	for index, info in ipairs(C_Garrison.GetPlots()) do
+	for index, info in ipairs(C_Garrison.GetPlots(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
 		ScanPlot(info.id)
 	end
 end
@@ -208,7 +208,7 @@ end
 -- triggered when garrison level changes
 function garrison:GARRISON_UPDATE(event)
 	local plotID, buildingID = 0, 0
-	local rank       = C_Garrison.GetGarrisonInfo()
+	local rank       = C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0)
 	local canUpgrade = C_Garrison.CanUpgradeGarrison()
 	garrison.ThisCharacter.Plots[plotID] = strjoin('|', buildingID, rank, canUpgrade and 1 or 0)
 end
@@ -253,7 +253,7 @@ end
 
 local function ScanFollowers()
 	wipe(garrison.ThisCharacter.Followers)
-	for index, follower in ipairs(C_Garrison.GetFollowers()) do
+	for index, follower in ipairs(C_Garrison.GetFollowers(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
 		-- uncollected have plain .followerID, collected have hex .garrFollowerID
 		if follower.isCollected then ScanFollower(follower.followerID) end
 	end
@@ -281,10 +281,13 @@ end
 local function ScanMission(missionID, timeLeft)
 	if not missionID then return end
 	local mission = C_Garrison.GetBasicMissionInfo(missionID)
-	local successChance = C_Garrison.GetRewardChance(missionID) -- base -or- actual chance
+	-- TODO must fix, happens e.g. on mission start
+	-- FOO = mission; SlashCmdList['DUMP']('FOO')
+	if not mission then return end
+	local successChance = C_Garrison.GetMissionSuccessChance(missionID) -- base -or- actual chance
 	local missionFollowers
 
-	if mission.state == -2 then     -- available
+	if not mission.state or mission.state == -2 then     -- available
 		timeLeft = timeLeft or mission.offerEndTime or 24*60*60
 	elseif mission.state == -1 then -- active
 		timeLeft = timeLeft or select(5, C_Garrison.GetMissionTimes(missionID))
@@ -341,9 +344,12 @@ local function GetTimeLeftApproximate(timeLeftText)
 	end
 end
 
+--[[
+TODO: login wipes shipyard missions until shipyard table is used.
+--]]
 local function ScanMissions()
 	wipe(returnTable)
-	C_Garrison.GetInProgressMissions(returnTable)
+	C_Garrison.GetInProgressMissions(returnTable, _G.LE_FOLLOWER_TYPE_GARRISON_6_0)
 	-- remove outdated data
 	for missionID, info in pairs(garrison.ThisCharacter.Missions) do
 		local exists = false
@@ -381,7 +387,7 @@ local function ScanMissions()
 			ScanMission(info.missionID, timeLeft)
 		end
 	end
-	for _, info in pairs(C_Garrison.GetAvailableMissions()) do
+	for _, info in pairs(C_Garrison.GetAvailableMissions(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
 		ScanMission(info.missionID)
 	end
 end
@@ -498,7 +504,7 @@ function garrison.GetFollowerIDByName(followerName)
 		end
 	end
 	-- follower is not collected, is it a basic follower?
-	for _, follower in pairs(C_Garrison.GetFollowers()) do
+	for _, follower in pairs(C_Garrison.GetFollowers(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
 		if follower.name == followerName then
 			return follower.garrFollowerID or follower.followerID
 		end
@@ -997,7 +1003,7 @@ function garrison:OnEnable()
 	-- initialization
 	self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE', function(self, event, ...)
 		-- first time initialization
-		if C_Garrison.GetGarrisonInfo() then
+		if C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0) then
 			ScanPlots()
 			ScanFollowers()
 			ScanMissions()

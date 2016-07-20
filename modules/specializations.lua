@@ -282,13 +282,13 @@ function specializations:OnEnable()
 	local initialized
 	self:RegisterEvent('PLAYER_LOGIN', function(event)
 		ScanTalents()
-		ScanGlyphs()
+		-- ScanGlyphs()
 		self:UnregisterEvent(event)
 	end)
 	self:RegisterEvent('PLAYER_TALENT_UPDATE', ScanTalents)
-	self:RegisterEvent('GLYPH_ADDED',   ScanGlyphs)
-	self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
-	self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
+	-- self:RegisterEvent('GLYPH_ADDED',   ScanGlyphs)
+	-- self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
+	-- self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
 end
 
 function specializations:OnDisable()

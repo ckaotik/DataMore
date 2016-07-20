@@ -348,7 +348,7 @@ end
 
 function lockouts:OnEnable()
 	hooksecurefunc('BonusRollFrame_StartBonusRoll', function(spellID, text, duration, currencyID)
-		-- print('BonusRollFrame_StartBonusRoll', spellID, text, duration, currencyID)
+		print('BonusRollFrame_StartBonusRoll', spellID, text, duration, currencyID)
 		-- BonusRollFrame_StartBonusRoll 178851 '' 179 994
 		RequestRaidInfo()
 	end)

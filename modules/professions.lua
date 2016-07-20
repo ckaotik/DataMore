@@ -76,82 +76,6 @@ local function GetSkillLineByName(skillName)
 	end
 end
 
-local tradeSkillFilters = {}
-local function SaveFilters()
-	local skillName = GetTradeSkillLine()
-	local filters = tradeSkillFilters[skillName]
-	if not filters then
-		tradeSkillFilters[skillName] = {}
-		filters = tradeSkillFilters[skillName]
-	end
-
-	filters.selected 	 = GetTradeSkillSelectionIndex()
-	filters.name 		 = GetTradeSkillItemNameFilter()
-	filters.levelMin,
-	filters.levelMax 	 = GetTradeSkillItemLevelFilter()
-	filters.hasMaterials = _G.TradeSkillFrame.filterTbl.hasMaterials
-	filters.hasSkillUp 	 = _G.TradeSkillFrame.filterTbl.hasSkillUp
-
-	if not GetTradeSkillInvSlotFilter(0) then
-		if not filters.slots then filters.slots = {} end
-		wipe(filters.slots)
-		for i = 1, select('#', GetTradeSkillInvSlots()) do
-			filters.slots[i] = GetTradeSkillInvSlotFilter(i)
-		end
-	end
-	if not GetTradeSkillCategoryFilter(0) then
-		if not filters.subClasses then filters.subClasses = {} end
-		wipe(filters.subClasses)
-		for i = 1, select('#', GetTradeSkillSubClasses()) do
-			filters.subClasses[i] = GetTradeSkillCategoryFilter(i)
-		end
-	end
-
-	if not filters.collapsed then filters.collapsed = {} end
-	wipe(filters.collapsed)
-	for index = 1, GetNumTradeSkills() do
-		local _, skillType, _, isExpanded = GetTradeSkillInfo(index)
-		if skillType:find('header') and not isExpanded then
-			table.insert(filters.collapsed, index)
-		end
-	end
-end
-local function RestoreFilters()
-	local skillName = GetTradeSkillLine()
-	local filters = skillName and tradeSkillFilters[skillName] or nil
-	if not skillName or not filters then return end
-
-	SetTradeSkillItemNameFilter(filters.name)
-	SetTradeSkillItemLevelFilter(filters.levelMin or 0, filters.levelMax or 0)
-	TradeSkillOnlyShowMakeable(filters.hasMaterials)
-	TradeSkillOnlyShowSkillUps(filters.hasSkillUp)
-
-	if filters.slots and #filters.slots > 0 then
-		SetTradeSkillInvSlotFilter(0, 1, 1)
-		for index, enabled in pairs(filters.slots) do
-			SetTradeSkillInvSlotFilter(index, enabled)
-		end
-	end
-	if filters.subClasses and #filters.subClasses > 0 then
-		SetTradeSkillCategoryFilter(0, 1, 1)
-		for index, enabled in pairs(filters.subClasses) do
-			SetTradeSkillCategoryFilter(index, enabled)
-		end
-	end
-	for _, index in ipairs(filters.collapsed) do
-		CollapseTradeSkillSubClass(index)
-	end
-
-	TradeSkillUpdateFilterBar()
-	SelectTradeSkill(filters.selected)
-end
-local function RemoveFilters()
-	ExpandTradeSkillSubClass(0)
-	SetTradeSkillItemLevelFilter(0, 0)
-    SetTradeSkillItemNameFilter(nil)
-    TradeSkillSetFilter(-1, -1)
-end
-
 local function ScanProfessions()
 	local professions = plugin.ThisCharacter.Professions
 	for skillLine, profession in pairs(professions) do
@@ -186,26 +110,22 @@ local function ScanProfessions()
 end
 
 local function ScanRecipes(skillLine)
-	local recipes = plugin.ThisCharacter.Recipes[skillLine]
+	local recipes = plugin.ThisCharacter.Recipes[skillLine] or {}
 	wipe(recipes)
 
-	RemoveFilters()
-	for index = 1, GetNumTradeSkills() do
-		local skillName, skillType = GetTradeSkillInfo(index)
-		if skillName and not skillType:find('header') then
-			local recipeLink = GetTradeSkillRecipeLink(index)
-			local recipeID = addon.GetLinkID(recipeLink)
+	for _, recipe in ipairs(C_TradeSkillUI.GetAllRecipeIDs()) do
+		local recipeLink = C_TradeSkillUI.GetRecipeLink(recipe)
+		local craftedLink = C_TradeSkillUI.GetRecipeItemLink(recipe)
+		local linkID, linkType = addon.GetLinkID(craftedLink)
 
-			local craftedLink = GetTradeSkillItemLink(index)
-			local linkID, linkType = addon.GetLinkID(craftedLink)
-			if linkType == 'enchant' and linkID == recipeID then
-				-- Craft result is identical to recipe
-				craftedLink = true
-			elseif linkType == 'item' and addon.IsBaseLink(craftedLink) then
-				craftedLink = linkID
-			end
-			recipes[recipeID] = craftedLink
+		local recipeID = addon.GetLinkID(recipeLink)
+		if linkType == 'enchant' and linkID == recipeID then
+			-- Craft result is identical to recipe
+			craftedLink = true
+		elseif linkType == 'item' and addon.IsBaseLink(craftedLink) then
+			craftedLink = linkID
 		end
+		recipes[recipeID] = craftedLink
 	end
 end
 
@@ -369,18 +289,15 @@ function plugin:OnInitialize()
 end
 
 local function OnTradeSkillShow()
-	if IsTradeSkillReady() then
+	if C_TradeSkillUI.IsTradeSkillReady() then
 		plugin:UnregisterEvent('TRADE_SKILL_UPDATE')
-		local skillName, _, maxRank = GetTradeSkillLine()
-		if (IsNPCCrafting() and maxRank == 0) or IsTradeSkillGuild() or IsTradeSkillLinked() then
+		local skillName, _, maxRank = C_TradeSkillUI.GetTradeSkillLine()
+		if (C_TradeSkillUI.IsNPCCrafting() and maxRank == 0) or C_TradeSkillUI.IsTradeSkillGuild() or C_TradeSkillUI.IsTradeSkillLinked() then
 			-- only scan our own professions
 			return
 		else
 			local skillLine, spellID = GetSkillLineByName(skillName)
-			SaveFilters()
 			ScanRecipes(skillLine, spellID)
-			ScanCooldowns()
-			RestoreFilters()
 		end
 	else
 		plugin:RegisterEvent('TRADE_SKILL_UPDATE', OnTradeSkillShow)

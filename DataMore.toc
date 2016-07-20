@@ -29,7 +29,7 @@ cache.lua
 modules\equipment.lua
 modules\factions.lua
 modules\garrison.lua
-modules\glyphs.lua
+#modules\glyphs.lua
 modules\lockouts.lua
 modules\mails.lua
 modules\professions.lua
