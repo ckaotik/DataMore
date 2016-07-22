@@ -294,28 +294,26 @@ end
 local function ScanMission(missionID, timeLeft)
 	if not missionID then return end
 	local mission = C_Garrison.GetBasicMissionInfo(missionID)
-	-- TODO must fix, happens e.g. on mission start
-	-- FOO = mission; SlashCmdList['DUMP']('FOO')
-	if not mission then return end
-	local successChance = C_Garrison.GetMissionSuccessChance(missionID) -- base -or- actual chance
-	local missionFollowers
 
-	if not mission.state or mission.state == -2 then     -- available
-		timeLeft = timeLeft or mission.offerEndTime or 24*60*60
-	elseif mission.state == -1 then -- active
-		timeLeft = timeLeft or select(5, C_Garrison.GetMissionTimes(missionID))
+	local missionFollowers
+	if mission.inProgress then
+		timeLeft = mission.timeLeftSeconds
 		for _, followerID in ipairs(mission.followers) do
-			local followerLink   = C_Garrison.GetFollowerLink(followerID)
-			local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
-			missionFollowers = (missionFollowers and missionFollowers..':' or '') .. garrFollowerID
+			local followerLink = C_Garrison.GetFollowerLink(followerID)
+			missionFollowers = (missionFollowers and missionFollowers..':' or '') .. followerLink:match('garrfollower:(%d+)')
 		end
+	else
+		timeLeft = timeLeft or mission.offerEndTime or 24*60*60
 	end
+
+	-- base -or- actual chance
+	local successChance = C_Garrison.GetMissionSuccessChance(missionID)
 	local timestamp = math.floor(time() + timeLeft + 0.5)
 	local missionInfo = strjoin('|', timestamp, successChance, missionFollowers or '')
 	garrison.ThisCharacter.Missions[missionID] = strtrim(missionInfo, '|')
 
 	-- store general information about this mission not available via C_Garrison API
-	local missionInfo = strjoin('|', mission.type, mission.location, mission.level, mission.iLevel, mission.durationSeconds, mission.isRare and 1 or 0, mission.cost, mission.typeAtlas, mission.locPrefix)
+	local missionInfo = strjoin('|', mission.followerTypeID, mission.type, mission.level, mission.iLevel, mission.durationSeconds, mission.isRare and 1 or 0, mission.cost, mission.typeAtlas, mission.locPrefix)
 	garrison.db.global.Missions[missionID] = strtrim(missionInfo, '|')
 end
 
@@ -723,27 +721,27 @@ function garrison.GetBasicMissionInfo(missionID)
 	local missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix, followerType
 	local info = C_Garrison.GetBasicMissionInfo(missionID)
 	if info then
-		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix, followerType = info.type, info.location, info.level, info.iLevel, info.durationSeconds, info.isRare, info.cost, info.typeAtlas, info.locPrefix, info.followerTypeID
+		followerType, missionType, typeAtlas = info.followerTypeID, info.type, info.typeAtlas
+		level, iLevel = info.level, info.iLevel
+		location, locPrefix = info.location, info.locPrefix
+		duration, isRare, cost = info.durationSeconds, info.isRare, info.cost
+
 		for k, followerID in pairs(info.followers) do
 			local garrFollowerID = tonumber(C_Garrison.GetFollowerLink(followerID):match('%d+') or '')
 			followers[k] = garrFollowerID
 		end
 	else
 		local missionInfo = missionID and garrison.db.global.Missions[missionID]
-		if not missionInfo then return end
+		if not missionInfo or missionInfo == '' then return end
 		-- try figure out mission followers
-		local missionFollowers = select(3, strsplit('|', missionInfo)) or ''
-		missionFollowers:gsub('[^:]+', AddFollower)
-		missionType, location, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
+		-- local missionFollowers = select(3, strsplit('|', garrison.ThisCharacter.Missions[missionID])) or ''
+		-- missionFollowers:gsub('[^:]+', AddFollower)
+
+		followerType, missionType, level, iLevel, duration, isRare, cost, typeAtlas, locPrefix = strsplit('|', missionInfo)
 		isRare = isRare == '1' and true or false
-		level, iLevel, duration, cost = level or 0, iLevel or 0, duration or 0, cost or 0
-		if typeAtlas and typeAtlas:lower():find('shipmission') then
-			followerType = _G.LE_FOLLOWER_TYPE_SHIPYARD_6_2
-		else
-			followerType = _G.LE_FOLLOWER_TYPE_GARRISON_6_0
-		end
+		level, iLevel, duration, cost, location = level or 0, iLevel or 0, duration or 0, cost or 0, location or ''
 	end
-	return followerType, missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare, locPrefix, location, followers
+	return followerType*1, missionType, typeAtlas, level*1, iLevel*1, cost*1, duration*1, isRare, locPrefix, location, followers
 end
 
 function garrison.GetMissionInfo(character, missionID)
