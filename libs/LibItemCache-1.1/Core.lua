@@ -1,5 +1,5 @@
 --[[
-Copyright 2011-2014 João Cardoso
+Copyright 2011-2015 João Cardoso
 LibItemCache is distributed under the terms of the GNU General Public License.
 You can redistribute it and/or modify it under the terms of the license as
 published by the Free Software Foundation.
@@ -15,7 +15,7 @@ along with this library. If not, see <http://www.gnu.org/licenses/>.
 This file is part of LibItemCache.
 --]]
 
-local Lib = LibStub:NewLibrary('LibItemCache-1.1', 17)
+local Lib = LibStub:NewLibrary('LibItemCache-1.1', 21)
 if not Lib then
 	return
 end
@@ -31,14 +31,6 @@ end
 
 
 --[[ Startup ]]--
-
-LibStub('AceEvent-3.0'):Embed(Lib)
-Lib:RegisterEvent('BANKFRAME_OPENED', function() Lib.atBank = true end)
-Lib:RegisterEvent('BANKFRAME_CLOSED', function() Lib.atBank = nil end)
-Lib:RegisterEvent('VOID_STORAGE_OPEN', function() Lib.atVault = true end)
-Lib:RegisterEvent('VOID_STORAGE_CLOSE', function() Lib.atVault = nil end)
-Lib:RegisterEvent('GUILDBANKFRAME_OPENED', function() Lib.atGuild = true end)
-Lib:RegisterEvent('GUILDBANKFRAME_CLOSED', function() Lib.atGuild = nil end)
 
 Lib.PLAYER = UnitName('player')
 Lib.FACTION = UnitFactionGroup('player')
@@ -76,9 +68,9 @@ function Lib:GetPlayerGuild(player)
 	end
 end
 
-function Lib:GetPlayerAddress(player)
-	local player, realm = strsplit('-', player or self.PLAYER, 2)
-	return realm and realm:sub(2) or self.REALM, realm and player:sub(0, -2) or player
+function Lib:GetPlayerAddress(address)
+	local player, realm = strmatch(address or '', '(%S+) %- (%S+)')
+	return realm or self.REALM, player or address or self.PLAYER
 end
 
 function Lib:IsPlayerCached(player)
@@ -187,14 +179,14 @@ end
 
 function Lib:GetBagType(player, bag)
 	local kind = type(bag)
-	local tab = kind == 'string' and tonumber(bag:match('guild(%d+)'))
+	local tab = kind == 'string' and tonumber(bag:match('^guild(%d+)$'))
 	if tab then
-		return not self.atGuild or self:GetPlayerGuild(player) ~= self:GetPlayerGuild(self.PLAYER), nil,nil, tab
+		return not self.AtGuild or self:GetPlayerGuild(player) ~= self:GetPlayerGuild(self.PLAYER), nil,nil, tab
 	end
 
 	local vault = bag == 'vault'
 	local bank = bag == BANK_CONTAINER or bag == REAGENTBANK_CONTAINER or kind == 'number' and bag > NUM_BAG_SLOTS
-	local cached = self:IsPlayerCached(player) or vault and not self.atVault or bank and not self.atBank
+	local cached = self:IsPlayerCached(player) or vault and not self.AtVault or bank and not self.AtBank
 
 	return cached, bank, vault
 end
