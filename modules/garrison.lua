@@ -14,6 +14,12 @@ local GARRISON_FOLLOWER_MAX_UPGRADE_QUALITY = _G.GARRISON_FOLLOWER_MAX_UPGRADE_Q
 local returnTable = {}
 local followers = {}
 
+local followerTypes = {
+	_G.LE_FOLLOWER_TYPE_GARRISON_6_0,
+	_G.LE_FOLLOWER_TYPE_SHIPYARD_6_2,
+	_G.LE_FOLLOWER_TYPE_GARRISON_7_0,
+}
+
 local defaults = {
 	global = {
 		Characters = {
@@ -251,11 +257,18 @@ local function ScanFollower(followerID)
 	garrison.ThisCharacter.Followers[garrFollowerID] = strjoin('|', followerData, inactive, xp)
 end
 
-local function ScanFollowers()
-	wipe(garrison.ThisCharacter.Followers)
-	for index, follower in ipairs(C_Garrison.GetFollowers(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
+local function ScanFollowersOfType(followerType)
+	wipe(returnTable)
+	local followers = C_Garrison.GetFollowers(followerType) or returnTable
+	for index, follower in ipairs(followers) do
 		-- uncollected have plain .followerID, collected have hex .garrFollowerID
 		if follower.isCollected then ScanFollower(follower.followerID) end
+	end
+end
+local function ScanFollowers()
+	wipe(garrison.ThisCharacter.Followers)
+	for _, followerType in pairs(followerTypes) do
+		ScanFollowersOfType(followerType)
 	end
 end
 
@@ -314,52 +327,20 @@ local function IsActiveMission(mission)
 	return missionFollowers and missionFollowers ~= ''
 end
 
--- TODO: adjust to work with numbered placeholders (%2$d)
-local numberMappings = {
-	['GARRISON_DURATION_DAYS_HOURS']    = {d =   1, h =   2, m = nil, s = nil},
-	['GARRISON_DURATION_HOURS_MINUTES'] = {d = nil, h =   1, m =   2, s = nil},
-	['GARRISON_DURATION_DAYS']          = {d =   1, h = nil, m = nil, s = nil},
-	['GARRISON_DURATION_HOURS']         = {d = nil, h =   1, m = nil, s = nil},
-	['GARRISON_DURATION_MINUTES']       = {d = nil, h = nil, m =   1, s = nil},
-	['GARRISON_DURATION_SECONDS']       = {d = nil, h = nil, m = nil, s =   1},
-}
-local numbers = {}
-local function GetNumbers(number) table.insert(numbers, number); return '' end
-local fontString = UIParent:CreateFontString(nil, nil, 'GameFontNormal')
-local function GetTimeLeftApproximate(timeLeftText)
-	wipe(numbers)
-	timeLeftText:gsub('%d+', GetNumbers)
-	for pattern, map in pairs(numberMappings) do
-		fontString:SetFormattedText(_G[pattern], unpack(numbers), 0, 0, 0, 0)
-		-- get resolved sequences, e.g |4One:Many;
-		if fontString:GetText() == timeLeftText then
-			-- found the pattern, now calculate the time
-			local timeLeft = 0
-			if map.s then timeLeft = timeLeft + numbers[map.s] end
-			if map.m then timeLeft = timeLeft + numbers[map.m]*60 end
-			if map.h then timeLeft = timeLeft + numbers[map.h]*60*60 end
-			if map.d then timeLeft = timeLeft + numbers[map.d]*60*60*24 end
-			return timeLeft
-		end
-	end
-end
-
---[[
-TODO: login wipes shipyard missions until shipyard table is used.
---]]
-local function ScanMissions()
+local function ScanMissionsOfType(followerType)
 	wipe(returnTable)
-	C_Garrison.GetInProgressMissions(returnTable, _G.LE_FOLLOWER_TYPE_GARRISON_6_0)
+	C_Garrison.GetInProgressMissions(returnTable, followerType)
 	-- remove outdated data
 	for missionID, info in pairs(garrison.ThisCharacter.Missions) do
-		local exists = false
-		if IsActiveMission(info) then
+		local missionFollowerType = garrison.GetBasicMissionInfo(missionID)
+		local current = followerType ~= missionFollowerType
+		if not current and IsActiveMission(info) then
 			-- remove elsewhere collected missions
 			for _, mission in pairs(returnTable) do
-				exists = mission.missionID == missionID
-				if exists then break end
+				current = mission.missionID == missionID
+				if current then break end
 			end
-			if not exists then
+			if not current then
 				-- mission has been collected elsewhere
 				local _, _, _, _, _, _, duration, isRare = garrison.GetBasicMissionInfo(missionID)
 				local timestamp, successChance, missionFollowers = strsplit('|', info)
@@ -374,7 +355,7 @@ local function ScanMissions()
 				end
 			end
 		end
-		if not exists then
+		if not current then
 			garrison.ThisCharacter.Missions[missionID] = nil
 		end
 	end
@@ -383,12 +364,19 @@ local function ScanMissions()
 	for _, info in pairs(returnTable) do
 		if garrison.ThisCharacter.Missions[info.missionID] == '' then
 			-- mission must have been started elsewhere
-			local timeLeft = GetTimeLeftApproximate(info.timeLeft)
-			ScanMission(info.missionID, timeLeft)
+			ScanMission(info.missionID, info.timeLeftSeconds)
 		end
 	end
-	for _, info in pairs(C_Garrison.GetAvailableMissions(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
+
+	wipe(returnTable)
+	C_Garrison.GetAvailableMissions(returnTable, followerType)
+	for _, info in pairs(returnTable) do
 		ScanMission(info.missionID)
+	end
+end
+local function ScanMissions()
+	for _, followerType in pairs(followerTypes) do
+		ScanMissionsOfType(followerType)
 	end
 end
 
@@ -396,11 +384,11 @@ function garrison:GARRISON_MISSION_NPC_OPENED(event)
 	self.ThisCharacter.lastUpdate = time()
 end
 
-function garrison:GARRISON_MISSION_STARTED(event, missionID)
+function garrison:GARRISON_MISSION_STARTED(event, followerType, missionID)
 	-- update status and followers
 	ScanMission(missionID)
 end
-function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, _, success, followers)
+function garrison:GARRISON_MISSION_COMPLETE_RESPONSE(event, missionID, canComplete, success, overmaxSucceeded, followers)
 	local completes, successChance = strsplit('|', self.ThisCharacter.Missions[missionID])
 	local _, _, _, _, _, _, duration, isRare = self.GetBasicMissionInfo(missionID)
 	local _, durationSeconds, hasTimeMultiplier, chance, partyBuffs, environmentCounter, _, currencyMultipliers, goldMultiplier = C_Garrison.GetPartyMissionInfo(missionID)
@@ -504,9 +492,11 @@ function garrison.GetFollowerIDByName(followerName)
 		end
 	end
 	-- follower is not collected, is it a basic follower?
-	for _, follower in pairs(C_Garrison.GetFollowers(_G.LE_FOLLOWER_TYPE_GARRISON_6_0)) do
-		if follower.name == followerName then
-			return follower.garrFollowerID or follower.followerID
+	for _, followerType in pairs(followerTypes) do
+			for _, follower in pairs(C_Garrison.GetFollowers(followerType)) do
+			if follower.name == followerName then
+				return follower.garrFollowerID or follower.followerID
+			end
 		end
 	end
 end
@@ -960,17 +950,7 @@ local PublicMethods = {
 	GetFollowerSpellCounters = function(char, spellType, id) return garrison[spellType == 'AbilityCounters' and 'GetNumFollowersWithCounter' or 'GetNumFollowersWithSkill'](char, id) end,
 }
 
-function garrison:OnEnable()
-	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
-
-	-- we will override parts of DataStore_Garrisons
-	DataStore:RegisterModule(self.name, self, PublicMethods, true)
-	for methodName in pairs(PublicMethods) do
-		if methodName ~= 'GetBasicMissionInfo' and methodName ~= 'GetFollowerID' then
-			DataStore:SetCharacterBasedMethod(methodName)
-		end
-	end
-
+function garrison:RegisterEvents()
 	-- resources
 	self:RegisterEvent('SHOW_LOOT_TOAST')
 
@@ -993,27 +973,41 @@ function garrison:OnEnable()
 	self:RegisterEvent('GARRISON_MISSION_NPC_OPENED')
 	self:RegisterEvent('GARRISON_MISSION_STARTED')
 	self:RegisterEvent('GARRISON_MISSION_COMPLETE_RESPONSE')
-	-- self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE') -- overwritten for first run
+	self:RegisterEvent('GARRISON_RANDOM_MISSION_ADDED', 'GARRISON_MISSION_LIST_UPDATE')
 
 	-- followers
 	self:RegisterEvent('GARRISON_FOLLOWER_ADDED')
 	self:RegisterEvent('GARRISON_FOLLOWER_REMOVED')
 	self:RegisterEvent('GARRISON_FOLLOWER_UPGRADED')
+end
+
+function garrison:OnEnable()
+	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
+
+	-- we will override parts of DataStore_Garrisons
+	DataStore:RegisterModule(self.name, self, PublicMethods, true)
+	for methodName in pairs(PublicMethods) do
+		if methodName ~= 'GetBasicMissionInfo' and methodName ~= 'GetFollowerID' then
+			DataStore:SetCharacterBasedMethod(methodName)
+		end
+	end
 
 	-- initialization
-	self:RegisterEvent('GARRISON_MISSION_LIST_UPDATE', function(self, event, ...)
+	self:RegisterEvent('GARRISON_SHOW_LANDING_PAGE', function(self, event, ...)
 		-- first time initialization
 		if C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0) then
 			ScanPlots()
 			ScanFollowers()
 			ScanMissions()
+
 			-- don't store empty data sets for characters without garrisons
 			self.ThisCharacter.lastUpdate = self.ThisCharacter.lastUpdate or time()
-
 			PruneDB(self.db)
 		end
 		self:UnregisterEvent(event)
-		self:RegisterEvent(event)
+
+		-- Register late, to avoid bulk of false alarms on load.
+		self:RegisterEvents()
 	end, self)
 end
 
