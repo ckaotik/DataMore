@@ -5,6 +5,7 @@ local plugin = addon:NewModule('Professions', 'AceEvent-3.0')
 -- GLOBALS:
 -- GLOBALS: time, pairs, wipe
 
+local emptyTable, returnTable = {}, {}
 local defaults = {
 	global = {
 		Characters = {
@@ -21,13 +22,18 @@ local defaults = {
 				},
 				Recipes = {
 					['*'] = { -- keyed by skillLine
-						['*'] = nil, -- linkStub|true crafted link, keyed by recipe spellID
+						['*'] = 0, -- linkStub|true crafted link, keyed by recipe spellID
 					},
 				},
 				Cooldowns = {
 					['*'] = nil, -- expiry, keyed by recipe spellID
 				},
 			}
+		},
+		Recipes = {
+			['*'] = { -- skillLine
+				['*'] = '', -- recipeID:craftedItem
+			},
 		},
 		--[[ Guilds = {
 			['*'] = {
@@ -63,11 +69,6 @@ local skillLineMappings = {
 	[129] =  3273, -- 'First Aid',
 	[356] =  7620, -- 'Fishing',
 }
-local primaryProfessions = {171, 164, 333, 202, 773, 755, 165, 197, 182, 186, 393}
-local secondaryProfessions = {794, 184, 129, 356}
-
-local emptyTable, returnTable = {}, {}
-
 local function GetSkillLineByName(skillName)
 	for skillLine, spellID in pairs(skillLineMappings) do
 		if skillName == GetSpellInfo(spellID) then
@@ -109,42 +110,67 @@ local function ScanProfessions()
 	plugin.ThisCharacter.lastUpdate = time()
 end
 
-local function ScanRecipes(skillLine)
-	local recipes = plugin.ThisCharacter.Recipes[skillLine] or {}
-	wipe(recipes)
-
-	for _, recipe in ipairs(C_TradeSkillUI.GetAllRecipeIDs()) do
-		local recipeLink = C_TradeSkillUI.GetRecipeLink(recipe)
-		local craftedLink = C_TradeSkillUI.GetRecipeItemLink(recipe)
-		local linkID, linkType = addon.GetLinkID(craftedLink)
-
-		local recipeID = addon.GetLinkID(recipeLink)
-		if linkType == 'enchant' and linkID == recipeID then
-			-- Craft result is identical to recipe
-			craftedLink = true
-		elseif linkType == 'item' and addon.IsBaseLink(craftedLink) then
-			craftedLink = linkID
-		end
-		recipes[recipeID] = craftedLink
+local function ScanRecipes()
+	if not C_TradeSkillUI.IsTradeSkillReady() or C_TradeSkillUI.IsDataSourceChanging()
+		or C_TradeSkillUI.IsTradeSkillLinked() or C_TradeSkillUI.IsTradeSkillGuild()
+		or C_TradeSkillUI.IsNPCCrafting() then
+		return
 	end
+
+	local knownRecipes = 0
+	local skillLine, skillName = C_TradeSkillUI.GetTradeSkillLine()
+	local recipeList = plugin.db.global.Recipes[skillLine]
+	wipe(recipeList)
+
+	local allRecipes = C_TradeSkillUI.GetAllRecipeIDs()
+	for i, recipeID in ipairs(allRecipes) do
+		-- Store list of all recipes for the profession.
+		local craftedItem = C_TradeSkillUI.GetRecipeItemLink(recipeID)
+		local linkID, linkType = addon.GetLinkID(craftedItem)
+
+		if linkType == 'enchant' then
+			craftedItem = -1 * linkID
+		elseif linkType == 'item' --[[ and addon.IsBaseLink(craftedItem) --]] then
+			craftedItem = linkID
+		end
+		recipeList[i] = strjoin(':', recipeID, craftedItem)
+
+		-- Store character's knowledge information.
+		local recipeInfo = C_TradeSkillUI.GetRecipeInfo(recipeID)
+		if recipeInfo and recipeInfo.learned then
+			knownRecipes = bit.bor(knownRecipes, 2^i)
+		end
+		wipe(recipeInfo)
+	end
+	plugin.ThisCharacter.Recipes[skillLine] = knownRecipes
 end
 
 local function ScanCooldowns()
 	local cooldowns = plugin.ThisCharacter.Cooldowns
-	wipe(cooldowns)
+	-- wipe(cooldowns)
 
-	for skillLine, recipes in pairs(plugin.ThisCharacter.Recipes) do
-		for recipeID, _ in pairs(recipes) do
-			local start, duration = GetSpellCooldown(recipeID)
-			local expires = (start or 0) + (duration or 0)
-			if expires > 0 then
-				cooldowns[recipeID] = expires
+	local now = time()
+	for recipeID, expires in pairs(cooldowns) do
+		if expires < now then
+			cooldowns[recipeID] = nil
+		end
+	end
+
+	for skillLine, recipes in pairs(plugin.db.global.Recipes) do
+		for i, recipe in pairs(recipes) do
+			local recipeID, craftedItem = strsplit(':', recipe, 2)
+			local timeLeft, isDayCooldown, charges, maxCharges = C_TradeSkillUI.GetRecipeCooldown(recipeID)
+			-- print(skillLine, recipeID, timeLeft, isDayCooldown) -- 168835
+			if timeLeft and timeLeft > 0 then
+				cooldowns[recipeID] = time() + timeLeft
 			end
 		end
 	end
 end
 
 -- TODO: API functionality
+local primaryProfessions = {171, 164, 333, 202, 773, 755, 165, 197, 182, 186, 393}
+local secondaryProfessions = {794, 184, 129, 356}
 function plugin.GetProfessions(character)
 	if not character.Professions then return {} end
 
@@ -163,6 +189,7 @@ function plugin.GetProfessions(character)
 	return {prof1, prof2, arch, fish, cook, firstAid}
 end
 
+-- returns rank, maxRank, spellID, specialization
 function plugin.GetProfessionInfo(character, profSkillLine)
 	local profession = character.Professions[profSkillLine]
 	if profession then
@@ -176,26 +203,47 @@ function plugin.GetProfessionTradeLink(character, skillLine)
 	return profession and profession.link or ''
 end
 
-function plugin.IsCraftKnown(character, skillLine, recipeID)
-	return (character.Recipes[skillLine] and character.Recipes[skillLine][recipeID]) and true or false
+function plugin.IsCraftKnown(character, recipeID, legacy)
+	local index, skillLine
+	if legacy then skillLine = recipeID; recipeID = legacy end
+
+	for tradeSkill, recipes in pairs(plugin.db.global.Recipes) do
+		if not skillLine or tradeSkill == skillLine then
+			for i, recipe in ipairs(recipes) do
+				local skillRecipeID = strsplit(':', recipe, 2)
+				if skillRecipeID == recipeID then
+					skillLine = tradeSkill
+					index = i
+					break
+				end
+			end
+		end
+		if index then break end
+	end
+	return index and bit.band(character.Recipes[skillLine], 2^index) > 0
 end
 
 function plugin.GetNumCraftLines(character, skillLine)
 	local count = 0
-	for _ in pairs(character.Recipes[skillLine]) do
-		count = count + 1
+	local recipes = plugin.db.global.Recipes[skillLine] or emptyTable
+	for i, recipe in ipairs(recipes) do
+		if bit.band(character.Recipes[skillLine], 2^index) > 0 then
+			count = count + 1
+		end
 	end
 	return count
 end
 
 function plugin.GetCraftLineInfo(character, skillLine, index)
 	-- note: index does not match book index!
-	local recipes = character.Recipes[skillLine] or emptyTable
-	local i = 0
-	for spellID, crafted in pairs(recipes) do
-		i = i + 1;
-		if i > index then break end
-		if i == index then
+	local recipes = plugin.db.global.Recipes[skillLine] or emptyTable
+	local knownIndex = 0
+	for i, recipe in ipairs(recipes) do
+		if bit.band(character.Recipes[skillLine], 2^index) > 0 then
+			knownIndex = knownIndex + 1
+		end
+		if index == knownIndex then
+			local recipeID, spellID = strsplit(':', recipe, 2)
 			return false, nil, spellID
 		end
 	end
@@ -210,10 +258,8 @@ end
 function plugin.GetProfessionCooldowns(character, skillLine)
 	wipe(returnTable)
 	for recipeID, expires in pairs(character.Cooldowns) do
-		if expires >= now then
-			if not skillLine or (character.Recipes[skillLine] and character.Recipes[skillLine][recipeID]) then
-				returnTable[recipeID] = expires
-			end
+		if expires >= now and C_TradeSkillUI.GetTradeSkillLineForRecipe(recipeID) == skillLine then
+			returnTable[recipeID] = expires
 		end
 	end
 	return returnTable
@@ -288,29 +334,14 @@ function plugin:OnInitialize()
 	end
 end
 
-local function OnTradeSkillShow()
-	if C_TradeSkillUI.IsTradeSkillReady() then
-		plugin:UnregisterEvent('TRADE_SKILL_UPDATE')
-		local skillName, _, maxRank = C_TradeSkillUI.GetTradeSkillLine()
-		if (C_TradeSkillUI.IsNPCCrafting() and maxRank == 0) or C_TradeSkillUI.IsTradeSkillGuild() or C_TradeSkillUI.IsTradeSkillLinked() then
-			-- only scan our own professions
-			return
-		else
-			local skillLine, spellID = GetSkillLineByName(skillName)
-			ScanRecipes(skillLine, spellID)
-		end
-	else
-		plugin:RegisterEvent('TRADE_SKILL_UPDATE', OnTradeSkillShow)
-	end
-end
-
 function plugin:OnEnable()
-	-- CHAT_MSG_SKILL, CHAT_MSG_SYSTEM
-	self:RegisterEvent('TRADE_SKILL_SHOW', OnTradeSkillShow)
-	self:RegisterEvent('SPELL_UPDATE_COOLDOWN', ScanCooldowns)
 	ScanProfessions()
-	-- Update cooldowns of known recipes
-	-- ScanCooldowns()
+	self:RegisterEvent('TRADE_SKILL_DATA_SOURCE_CHANGED', function()
+		ScanRecipes()
+		ScanCooldowns()
+	end)
+	ScanCooldowns()
+	self:RegisterEvent('SPELL_UPDATE_COOLDOWN', ScanCooldowns)
 
 	-- self:RegisterEvent('ARTIFACT_COMPLETE', OnArtifactComplete)
 	-- self:RegisterEvent('ARTIFACT_HISTORY_READY', OnArtifactHistoryReady)
