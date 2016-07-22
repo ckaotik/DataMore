@@ -2,21 +2,17 @@ local addonName, addon, _ = ...
 local specializations = addon:NewModule('Specializations', 'AceEvent-3.0')
 
 -- GLOBALS: _G, DataStore, LibStub
--- GLOBALS: GetNumSpecGroups, GetSpecialization, GetSpecializationInfo, GetSpecializationMasterySpells
--- GLOBALS: GetNumGlyphSockets, GetGlyphSocketInfo, GetSpellInfo
--- GLOBALS: GetTalentInfo, GetTalentInfoByID, GetTalentLink, GetActiveSpecGroup, GetMaxTalentTier, GetTalentRowSelectionInfo
+-- GLOBALS: GetNumSpecializations, GetSpecialization, GetSpecializationInfo, GetSpecializationMasterySpells
+-- GLOBALS: GetTalentInfo, GetTalentInfoByID, GetTalentLink, GetMaxTalentTier, GetTalentRowSelectionInfo
 -- GLOBALS: type, strsplit, tonumber, time, select, pairs, table, strjoin, unpack, wipe
 
 local defaults = {
 	global = {
 		Characters = {
 			['*'] = { -- character key, i.e. "Account.Realm.Name"
-				['*'] = { -- spec{specNum}
+				['*'] = { -- specID
 					talents = { -- keyed by tierIndex
 						['*'] = nil, -- talentID -or- false when unselected -or- nil when not available
-					},
-					glyphs = { -- keyed by socketID
-						['*'] = nil, -- glyphID|spellID -or- '0' when empty -or- nil when not available
 					},
 					specID = nil,
 					mastery = nil,
@@ -30,12 +26,6 @@ local defaults = {
 			['*'] = { -- class name
 				-- [index] = spellID,
 			},
-		},
-		-- list of class glyphs
-		glyphs = {
-			['*'] = { -- class name
-				-- [index] = strjoin('|', glyphID, glyphType, icon, description),
-			},
 		}, --]]
 	},
 }
@@ -45,21 +35,20 @@ local defaults = {
 -- --------------------------------------------------------
 local function ScanTalents()
 	local character = specializations.ThisCharacter
-	for specNum = 1, GetNumSpecGroups() do
-		local specIndex = GetSpecialization(nil, nil, specNum) or 0
+	for specNum = 1, GetNumSpecializations() do
 		local data = character['spec' .. specNum]
-		data.specID = GetSpecializationInfo(specIndex)
-		data.mastery = GetSpecializationMasterySpells(specIndex)
+		data.specID = GetSpecializationInfo(specNum)
+		data.mastery = GetSpecializationMasterySpells(specNum)
 
 		for tier = 1, GetMaxTalentTier() do
 			local column, isUnspent, selection = 1, true, nil
-			local talentID, name, texture, selected, available = GetTalentInfo(tier, column, specNum)
+			local talentID, name, texture, selected, available = GetTalentInfo(tier, column, 1)
 			while talentID do
-				-- GetTalentInfoBySpecialization(specIndex, tier, column)
+				-- GetTalentInfoBySpecialization(specNum, tier, column)
 				if selected then selection = talentID end
 				if selected or not available then isUnspent = false end
 				column = column + 1
-				talentID, name, texture, selected, available = GetTalentInfo(tier, column, specNum)
+				talentID, name, texture, selected, available = GetTalentInfo(tier, column, 1)
 			end
 			if available and isUnspent then
 				data.talents[tier] = false
@@ -68,27 +57,8 @@ local function ScanTalents()
 			end
 		end
 	end
-	character.activeSpecGroup = GetActiveSpecGroup()
+	character.activeSpecGroup = GetSpecialization()
 	character.lastUpdate = time()
-end
-
--- scans which glyphs are used in which spec/socket
-local function ScanGlyphs()
-	local data = specializations.ThisCharacter
-	for specNum = 1, GetNumSpecGroups() do
-		local specData = data['spec'..specNum]
-		wipe(specData.glyphs)
-
-		for socket = 1, GetNumGlyphSockets() do
-			local isAvailable, _, _, spellID, _, glyphID = GetGlyphSocketInfo(socket, specNum)
-			if isAvailable and glyphID then
-				specData.glyphs[socket] = strjoin('|', glyphID, spellID or '')
-			else
-				specData.glyphs[socket] = isAvailable and '0' or nil
-			end
-		end
-	end
-	data.lastUpdate = time()
 end
 
 -- --------------------------------------------------------
@@ -120,29 +90,13 @@ function specializations.GetSpecializationMastery(character, specNum)
 	return specData.mastery
 end
 
--- returns the currently active specialization group
--- named for backwards compatibility
-function specializations.GetActiveTalents(character)
-	return character.activeSpecGroup
+function specializations.GetNumSpecializations(character)
+	return #character
 end
 
--- --------------------------------------------------------
---  Glyphs
--- --------------------------------------------------------
-function specializations.GetGlyphSocketInfo(character, specNum, socket)
-	specNum = specNum or character.activeSpecGroup
-	local specData = character['spec'..specNum]
-	local _, glyphType, tooltipIndex = GetGlyphSocketInfo(socket, specNum)
-	if not specData or not glyphType then return end -- invalid socket or spec number
-
-	local glyphID, spellID, icon
-	local enabled = specData.glyphs[socket] and true or false
-	if enabled then
-		glyphID, spellID = strsplit('|', specData.glyphs[socket])
-		glyphID, spellID = tonumber(glyphID), tonumber(spellID)
-		_, _, icon = GetSpellInfo(spellID)
-	end
-	return enabled, glyphType, spellID, icon, glyphID, tooltipIndex
+-- returns the currently active specialization group
+function specializations.GetActiveSpecialization(character)
+	return character.activeSpecGroup
 end
 
 -- --------------------------------------------------------
@@ -250,15 +204,15 @@ local PublicMethods = {
 	GetSpecialization    = specializations.GetSpecialization,
 	GetSpecializationID  = specializations.GetSpecializationID,
 	GetSpecializationMastery = specializations.GetSpecializationMastery,
-	-- glyphs
-	GetGlyphSocketInfo   = specializations.GetGlyphSocketInfo,
+	GetNumSpecializations = specializations.GetNumSpecializations,
 	-- talents
 	GetNumUnspentTalents = specializations.GetNumUnspentTalents,
 	GetTalentSelection   = specializations.GetTalentSelection,
 	GetTalentInfo        = specializations.GetTalentInfo,
-	GetActiveTalents     = specializations.GetActiveTalents,
+	GetActiveSpecialization = specializations.GetActiveSpecialization,
 
 	-- legacy functions
+	GetActiveTalents     = specializations.GetActiveSpecialization,
 	GetClassTrees        = _GetClassTrees,
 	GetTreeInfo          = _GetTreeInfo,
 	GetTreeNameByID      = _GetTreeNameByID,
@@ -282,19 +236,13 @@ function specializations:OnEnable()
 	local initialized
 	self:RegisterEvent('PLAYER_LOGIN', function(event)
 		ScanTalents()
-		-- ScanGlyphs()
 		self:UnregisterEvent(event)
 	end)
 	self:RegisterEvent('PLAYER_TALENT_UPDATE', ScanTalents)
-	-- self:RegisterEvent('GLYPH_ADDED',   ScanGlyphs)
-	-- self:RegisterEvent('GLYPH_REMOVED', ScanGlyphs)
-	-- self:RegisterEvent('GLYPH_UPDATED', ScanGlyphs)
+	-- Unspent talent points via arg1 in CHARACTER_POINTS_CHANGED?
 end
 
 function specializations:OnDisable()
 	self:UnregisterEvent('PLAYER_LOGIN')
 	self:UnregisterEvent('PLAYER_TALENT_UPDATE')
-	self:UnregisterEvent('GLYPH_ADDED')
-	self:UnregisterEvent('GLYPH_REMOVED')
-	self:UnregisterEvent('GLYPH_UPDATED')
 end
