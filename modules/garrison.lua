@@ -37,7 +37,7 @@ local defaults = {
 					['*'] = '', -- followerData|isInactive|currentXP
 				},
 				Missions = { -- keyed by missionID
-					['*'] = '', -- completion/expiry timestamp|follower:follower:follower
+					['*'] = '', -- completion/expiry timestamp|chance|follower:follower:follower
 				},
 				MissionHistory = { -- only tracks rare missions
 					['*'] = { -- keyed by missionID
@@ -47,7 +47,7 @@ local defaults = {
 			},
 		},
 		Missions = { -- keyed by missionID
-			['*'] = '',
+			['*'] = '', -- string: 'followerType|missionType|level|iLevel|duration|isRare|cost|typeAtlas|locPrefix'
 		},
 	},
 }
@@ -758,8 +758,8 @@ function garrison.GetMissionInfo(character, missionID)
 	wipe(followers)
 	missionFollowers:gsub('[^:]+', AddFollower)
 
-	local followerType, missionType, typeAtlas, level, ilevel, cost, duration = garrison.GetBasicMissionInfo(missionID)
-	return missionType, typeAtlas, level, ilevel, cost, duration, followers, remainingTime, successChance, followerType
+	local followerType, missionType, typeAtlas, level, iLevel, cost, duration = garrison.GetBasicMissionInfo(missionID)
+	return missionType, typeAtlas, level, iLevel, cost, duration, followers, remainingTime, successChance, followerType
 end
 
 function garrison.GetGarrisonMissionExpiry(character, missionID)
