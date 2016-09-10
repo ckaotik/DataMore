@@ -36,7 +36,7 @@ local defaults = {
 local function ScanTalents()
 	local character = specializations.ThisCharacter
 	for specNum = 1, GetNumSpecializations() do
-		local data = character['spec' .. specNum]
+		local data = character[specNum]
 		data.specID = GetSpecializationInfo(specNum)
 		data.mastery = GetSpecializationMasterySpells(specNum)
 
@@ -104,7 +104,7 @@ end
 -- --------------------------------------------------------
 function specializations.GetNumUnspentTalents(character, specNum)
 	specNum = specNum or character.activeSpecGroup
-	local specData = character['spec'..specNum]
+	local specData = character[specNum]
 	local numUnspent = 0
 	for tier = 1, GetMaxTalentTier() do
 		local selection = specData.talents[tier]
@@ -115,7 +115,7 @@ end
 
 function specializations.GetTalentSelection(character, tier, specNum)
 	specNum = specNum or character.activeSpecGroup
-	local specData = character['spec'..specNum]
+	local specData = character[specNum]
 	local talentID = specData and specData.talents[tier]
 	return talentID
 end
