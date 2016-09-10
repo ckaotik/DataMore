@@ -15,10 +15,14 @@ local returnTable = {}
 local followers = {}
 
 local followerTypes = {
-	_G.LE_FOLLOWER_TYPE_GARRISON_6_0,
-	_G.LE_FOLLOWER_TYPE_SHIPYARD_6_2,
-	_G.LE_FOLLOWER_TYPE_GARRISON_7_0,
+	-- _G.LE_FOLLOWER_TYPE_GARRISON_6_0,
+	-- _G.LE_FOLLOWER_TYPE_SHIPYARD_6_2,
+	-- _G.LE_FOLLOWER_TYPE_GARRISON_7_0,
 }
+for followerType, options in pairs(_G.GarrisonFollowerOptions) do
+	table.insert(followerTypes, followerType)
+end
+table.sort(followerTypes)
 
 local defaults = {
 	global = {
@@ -214,7 +218,7 @@ end
 -- triggered when garrison level changes
 function garrison:GARRISON_UPDATE(event)
 	local plotID, buildingID = 0, 0
-	local rank       = C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0)
+	local rank       = C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0) or 0
 	local canUpgrade = C_Garrison.CanUpgradeGarrison()
 	garrison.ThisCharacter.Plots[plotID] = strjoin('|', buildingID, rank, canUpgrade and 1 or 0)
 end
@@ -283,7 +287,8 @@ function garrison:GARRISON_FOLLOWER_ADDED(event, followerID, name, class, displa
 		garrison:SendMessage('DATAMORE_GARRISON_SHIPMENT_COLLECTED', buildingMap.Shipyard)
 	end
 end
-function garrison:GARRISON_FOLLOWER_REMOVED(event, followerID, ...)
+function garrison:GARRISON_FOLLOWER_REMOVED(event, followerType, ...)
+	local followerID = false
 	local followerLink = followerID and C_Garrison.GetFollowerLink(followerID)
 	if not followerID or not followerLink then ScanFollowers() return end
 	local garrFollowerID = tonumber(followerLink:match('garrfollower:(%d+)'))
