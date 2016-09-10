@@ -226,7 +226,7 @@ end
 function plugin.GetNumCraftLines(character, skillLine)
 	local count = 0
 	local recipes = plugin.db.global.Recipes[skillLine] or emptyTable
-	for i, recipe in ipairs(recipes) do
+	for index, recipe in ipairs(recipes) do
 		if bit.band(character.Recipes[skillLine], 2^index) > 0 then
 			count = count + 1
 		end
