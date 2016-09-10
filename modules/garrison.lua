@@ -979,6 +979,23 @@ function garrison:RegisterEvents()
 	self:RegisterEvent('GARRISON_FOLLOWER_UPGRADED')
 end
 
+function garrison:Initialize(self)
+	if C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0) then
+		ScanPlots()
+		ScanFollowers()
+		ScanMissions()
+
+		-- don't store empty data sets for characters without garrisons
+		self.ThisCharacter.lastUpdate = self.ThisCharacter.lastUpdate or time()
+		PruneDB(self.db)
+	end
+	self:UnregisterEvent('GARRISON_SHOW_LANDING_PAGE')
+	self:UnregisterEvent('GARRISON_HIDE_LANDING_PAGE')
+
+	-- Register late, to avoid bulk of false alarms on load.
+	self:RegisterEvents()
+end
+
 function garrison:OnEnable()
 	self.db = LibStub('AceDB-3.0'):New(self.name .. 'DB', defaults, true)
 
@@ -990,23 +1007,8 @@ function garrison:OnEnable()
 		end
 	end
 
-	-- initialization
-	self:RegisterEvent('GARRISON_SHOW_LANDING_PAGE', function(self, event, ...)
-		-- first time initialization
-		if C_Garrison.GetGarrisonInfo(_G.LE_GARRISON_TYPE_6_0) then
-			ScanPlots()
-			ScanFollowers()
-			ScanMissions()
-
-			-- don't store empty data sets for characters without garrisons
-			self.ThisCharacter.lastUpdate = self.ThisCharacter.lastUpdate or time()
-			PruneDB(self.db)
-		end
-		self:UnregisterEvent(event)
-
-		-- Register late, to avoid bulk of false alarms on load.
-		self:RegisterEvents()
-	end, self)
+	self:RegisterEvent('GARRISON_SHOW_LANDING_PAGE', 'Initialize', self)
+	self:RegisterEvent('GARRISON_HIDE_LANDING_PAGE', 'Initialize', self)
 end
 
 function garrison:OnDisable()
