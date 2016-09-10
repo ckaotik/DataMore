@@ -60,7 +60,7 @@ local skillLineMappings = {
 	[165] =  2108, -- 'Leatherworking',
 	[197] =  3908, -- 'Tailoring',
 	-- primary gathering
-	[182] = 13614, -- 'Herbalism',
+	[182] =  2366, -- 'Herbalism',
 	[186] =  2575, -- 'Mining',
 	[393] =  8613, -- 'Skinning',
 	-- secondary
