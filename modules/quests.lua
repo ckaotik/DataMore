@@ -2,6 +2,7 @@ local addonName, addon, _ = ...
 local quests = addon:NewModule('Quests', 'AceEvent-3.0') -- 'AceConsole-3.0'
 
 local emptyTable = {}
+local thisCharacter = DataStore:GetCharacter()
 
 local defaults = {
 	global = {
@@ -74,15 +75,18 @@ function quests.GetAchievementProgress(character, achievementID)
 	local achievementGoal = 0
 
 	for index = 1, GetAchievementNumCriteria(achievementID) do
-		local _, _, _, _, requiredQuantity,_, _, _, quantityString = GetAchievementCriteriaInfo(achievementID, index)
+		local _, _, critCompleted, progress, requiredQuantity,_, _, _, quantityString = GetAchievementCriteriaInfo(achievementID, index)
+		if characterKey ~= thisCharacter then
+			_, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, isShared)
+		end
+
 		quantityString = quantityString:gsub(LARGE_NUMBER_SEPERATOR, '')
-		local requiredQuantityString = tonumber( quantityString:match('/%s*(%d+)') or '' )
+		local requiredQuantityString = tonumber(quantityString:match('/%s*(%d+)') or '')
 		if requiredQuantityString and requiredQuantityString ~= requiredQuantity then
 			-- fix currencies being multiplied by 100
 			requiredQuantity = requiredQuantityString
 		end
 
-		local _, critCompleted, progress = DataStore:GetCriteriaInfo(characterKey, achievementID, index, isShared)
 		achievementProgress = achievementProgress + (critCompleted and requiredQuantity or progress or 0)
 		achievementGoal     = achievementGoal + requiredQuantity
 	end
