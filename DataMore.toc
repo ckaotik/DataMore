@@ -33,4 +33,3 @@ modules\mails.lua
 modules\professions.lua
 modules\quests.lua
 modules\specializations.lua
-#modules\wardrobe.lua DataMore_WardrobeDB
