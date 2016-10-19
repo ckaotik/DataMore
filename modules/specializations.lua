@@ -67,7 +67,7 @@ end
 -- returns the specialization id (3 digits) as used by API functions
 function specializations.GetSpecializationID(character, specNum)
 	specNum = specNum or character.activeSpecGroup
-	local specData = character['spec'..specNum]
+	local specData = character[specNum]
 	return specData.specID
 end
 
