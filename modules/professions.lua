@@ -65,7 +65,7 @@ local skillLineMappings = {
 	[393] =  8613, -- 'Skinning',
 	-- secondary
 	[794] = 78670, -- 'Archaeology',
-	[184] =  2550, -- 'Cooking',
+	[185] =  2550, -- 'Cooking',
 	[129] =  3273, -- 'First Aid',
 	[356] =  7620, -- 'Fishing',
 }
@@ -170,7 +170,7 @@ end
 
 -- TODO: API functionality
 local primaryProfessions = {171, 164, 333, 202, 773, 755, 165, 197, 182, 186, 393}
-local secondaryProfessions = {794, 184, 129, 356}
+local secondaryProfessions = {794, 185, 129, 356}
 function plugin.GetProfessions(character)
 	if not character.Professions then return {} end
 
@@ -185,7 +185,7 @@ function plugin.GetProfessions(character)
 			end
 		end
 	end
-	local arch, fish, cook, firstAid = 794, 356, 184, 129
+	local arch, fish, cook, firstAid = 794, 356, 185, 129
 	return {prof1, prof2, arch, fish, cook, firstAid}
 end
 
@@ -291,7 +291,7 @@ function plugin:OnInitialize()
 		GetCraftLineInfo = self.GetCraftLineInfo,
 
 		-- legacy support
-		GetCookingRank     = function(character) return self.GetProfessionInfo(character, 184) end,
+		GetCookingRank     = function(character) return self.GetProfessionInfo(character, 185) end,
 		GetFishingRank     = function(character) return self.GetProfessionInfo(character, 356) end,
 		GetFirstAidRank    = function(character) return self.GetProfessionInfo(character, 129) end,
 		GetArchaeologyRank = function(character) return self.GetProfessionInfo(character, 794) end,
