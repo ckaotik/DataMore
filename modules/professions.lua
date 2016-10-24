@@ -22,7 +22,7 @@ local defaults = {
 				},
 				Recipes = {
 					['*'] = { -- keyed by skillLine
-						['*'] = 0, -- linkStub|true crafted link, keyed by recipe spellID
+						['*'] = 0, -- bitmap flags for learned/unlearned recipes
 					},
 				},
 				Cooldowns = {
@@ -117,12 +117,12 @@ local function ScanRecipes()
 		return
 	end
 
-	local knownRecipes = 0
 	local skillLine, skillName = C_TradeSkillUI.GetTradeSkillLine()
 	local recipeList = plugin.db.global.Recipes[skillLine]
 	wipe(recipeList)
 
 	local allRecipes = C_TradeSkillUI.GetAllRecipeIDs()
+	local knownRecipes = strrep('0', #allRecipes)
 	for i, recipeID in ipairs(allRecipes) do
 		-- Store list of all recipes for the profession.
 		local craftedItem = C_TradeSkillUI.GetRecipeItemLink(recipeID)
@@ -138,7 +138,7 @@ local function ScanRecipes()
 		-- Store character's knowledge information.
 		local recipeInfo = C_TradeSkillUI.GetRecipeInfo(recipeID)
 		if recipeInfo and recipeInfo.learned then
-			knownRecipes = bit.bor(knownRecipes, 2^i)
+			knownRecipes = knownRecipes:sub(1, i - 1) .. '1' .. knownRecipes:sub(i + 1)
 		end
 		wipe(recipeInfo)
 	end
@@ -220,31 +220,34 @@ function plugin.IsCraftKnown(character, recipeID, legacy)
 		end
 		if index then break end
 	end
-	return index and bit.band(character.Recipes[skillLine], 2^index) > 0
+	return index and character.Recipes[skillLine]:sub(index, index) == '1'
 end
 
 function plugin.GetNumCraftLines(character, skillLine)
 	local count = 0
-	local recipes = plugin.db.global.Recipes[skillLine] or emptyTable
-	for index, recipe in ipairs(recipes) do
-		if bit.band(character.Recipes[skillLine], 2^index) > 0 then
-			count = count + 1
-		end
+	local characterRecipes = character.Recipes[skillLine]
+	if type(characterRecipes) == 'table' and not next(characterRecipes) then
+		characterRecipes = ''
 	end
-	return count
+	return characterRecipes:gsub('0', ''):len()
 end
 
+-- Returns information on a known recipe:
+-- @return boolean isHeader
+-- @return nil difficultyColor
+-- @return integer recipeID
+--   Negative if craft produces a spell (e.g. enchant), positive for item ids.
 function plugin.GetCraftLineInfo(character, skillLine, index)
 	-- note: index does not match book index!
 	local recipes = plugin.db.global.Recipes[skillLine] or emptyTable
 	local knownIndex = 0
 	for i, recipe in ipairs(recipes) do
-		if bit.band(character.Recipes[skillLine], 2^index) > 0 then
+		if character.Recipes[skillLine]:sub(index, index) == '1' then
 			knownIndex = knownIndex + 1
 		end
 		if index == knownIndex then
-			local recipeID, spellID = strsplit(':', recipe, 2)
-			return false, nil, spellID
+			local recipeID, resultID = strsplit(':', recipe, 2)
+			return false, nil, recipeID*1
 		end
 	end
 	return nil
