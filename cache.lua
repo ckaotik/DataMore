@@ -7,8 +7,6 @@ local Lib = LibStub('LibItemCache-1.1')
 if not DataStore or Lib:HasCache() then return end
 
 local Cache = Lib:NewCache()
-local LAST_BANK_SLOT  = NUM_BAG_SLOTS + NUM_BANKBAGSLOTS
-local FIRST_BANK_SLOT = NUM_BAG_SLOTS + 1
 
 function Cache:GetBag(realm, player, bag, tab, slot)
 	local characterKey = DataStore:GetCharacter(player, realm, nil)

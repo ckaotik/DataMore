@@ -2,8 +2,9 @@ local addonName, addon = ...
 LibStub('AceAddon-3.0'):NewAddon(addon, addonName, 'AceEvent-3.0')
 _G[addonName] = addon -- expose us
 
--- GLOBALS: GetCVar, GetQuestResetTime
--- GLOBALS: assert ,format, pairs, string, time, date, tonumber, type
+-- GLOBALS: _G, Altoholic
+-- GLOBALS: GetCVar, GetQuestResetTime, IsAddOnLoaded, GetItemInfo
+-- GLOBALS: hooksecurefunc, assert, format, pairs, ipairs, string, time, date, tonumber, type
 
 local function EnableGrids()
 	if not IsAddOnLoaded('Altoholic_Grids') then return end
@@ -72,8 +73,7 @@ function addon.IsBaseLink(itemLink)
 	local itemID, linkType = addon.GetLinkID(itemLink)
 	if not itemID or linkType ~= 'item' then return end
 
-	-- @see http://wowpedia.org/ItemString
-	-- item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:uniqueID:level:UNKNOWN:upgradeID:difficulty:numBonuses:bonus1:bonus2:...
+	-- @see http://wowpedia.org/ItemString item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:uniqueID:level:specialization:upgrade:difficulty:numBonuses:bonus1:bonus2:...
 	local _, simpleLink = GetItemInfo(itemID)
 	local cleanedLink = itemLink:gsub('item:([^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:)[^:]*(.+)$', 'item:%10%2')
 	return cleanedLink == simpleLink

@@ -2,7 +2,7 @@ local addonName, addon, _ = ...
 local equipment = addon:NewModule('Equipment', 'AceEvent-3.0')
 
 -- GLOBALS: _G, LibStub, DataStore
--- GLOBALS: GetNumEquipmentSets, GetEquipmentSetInfo, GetEquipmentSetInfoByName, GetEquipmentSetLocations, EquipmentManager_UnpackLocation, EquipmentManager_GetItemInfoByLocation, GetItemInfo, GetVoidItemInfo, GetContainerItemLink, GetInventoryItemLink
+-- GLOBALS: C_EquipmentSet, EquipmentManager_UnpackLocation, EquipmentManager_GetItemInfoByLocation, GetItemInfo, GetVoidItemInfo, GetContainerItemLink, GetInventoryItemLink
 -- GLOBALS: time, pairs, wipe
 
 local defaults = {

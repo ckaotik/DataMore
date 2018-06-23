@@ -7,8 +7,8 @@ local commPrefix = 'DS_Mails'
 local MSG_SENDMAIL_INIT, MSG_SENDMAIL_END, MSG_SENDMAIL_ATTACHMENT, MSG_SENDMAIL_BODY = 1, 2, 3, 4
 
 -- GLOBALS: _G, LibStub, DataStore
--- GLOBALS: GetInboxHeaderInfo, GetItemInfo, GetSendMailItem, GetSendMailItemLink, UnitFullName, GetRealmName, GetSendMailMoney, GetSendMailCOD, GetInboxText, GetInboxItem, GetInboxItemLink, GetInboxNumItems, Ambiguate, GetItemIcon
--- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, ipairs, table, type, coroutine
+-- GLOBALS: GetInboxHeaderInfo, GetItemInfo, GetSendMailItem, GetSendMailItemLink, UnitFullName, GetRealmName, GetSendMailMoney, GetSendMailCOD, GetInboxText, GetInboxItem, GetInboxItemLink, GetInboxNumItems, Ambiguate, GetItemIcon, BNGetNumFriends, BNGetNumFriendGameAccounts, BNGetFriendGameAccountInfo
+-- GLOBALS: hooksecurefunc, time, strjoin, strsplit, wipe, pairs, ipairs, table, type, coroutine, print, select, unpack, match
 
 local thisCharacter = DataStore:GetCharacter()
 local playerRealm
@@ -71,8 +71,8 @@ local function IsRecipientKnown(recipient, realm)
 	local isBNetFriend
 	for friendIndex = 1, BNGetNumFriends() do
 		local focussedToon
-		for toonIndex = 1, BNGetNumFriendToons(friendIndex) do
-			local hasFocus, toonName, client, realmName, realmID, faction = BNGetFriendToonInfo(friendIndex, toonIndex)
+		for toonIndex = 1, BNGetNumFriendGameAccounts(friendIndex) do
+			local hasFocus, toonName, client, realmName, realmID, faction = BNGetFriendGameAccountInfo(friendIndex, toonIndex)
 			if hasFocus and client == _G.BNET_CLIENT_WOW then
 				-- this allows us to override the whisper recipient
 				focussedToon = toonName .. '-' .. realmName:gsub(' ', '')
