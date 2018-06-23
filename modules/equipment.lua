@@ -26,7 +26,8 @@ local function UpdateEquipmentSet(setName, setIcon)
 	sets[setName].icon = setIcon or sets[setName].icon
 
 	-- local itemIDs = GetEquipmentSetItemIDs(setName)
-	local locations = GetEquipmentSetLocations(setName)
+	local setID = C_EquipmentSet.GetEquipmentSetID(setName)
+	local locations = C_EquipmentSet.GetItemLocations(setID)
 	for slotID, location in pairs(locations) do
 		if location == SLOT_INVALID or location == SLOT_IGNORED or location == SLOT_MISSING then
 			sets[setName][slotID] = nil
@@ -66,15 +67,16 @@ end
 local function UpdateEquipmentSets()
 	local sets = equipment.ThisCharacter.EquipmentSets
 	for setName, setInfo in pairs(sets) do
-		local _, setID = GetEquipmentSetInfoByName(setName)
+		local setID = C_EquipmentSet.GetEquipmentSetID(setName)
 		if not setID then
 			wipe(setInfo)
 			sets[setName] = nil
 		end
 	end
 
-	for setID = 1, GetNumEquipmentSets() do
-		local setName, setIcon = GetEquipmentSetInfo(setID)
+	-- Nowadays, indices start at zero, it seems.
+	for setID = 0, C_EquipmentSet.GetNumEquipmentSets() - 1 do
+		local setName, setIcon = C_EquipmentSet.GetEquipmentSetInfo(setID)
 		UpdateEquipmentSet(setName, setIcon)
 	end
 	equipment.ThisCharacter.lastUpdate = time()
