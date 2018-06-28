@@ -74,8 +74,7 @@ local function UpdateEquipmentSets()
 		end
 	end
 
-	-- Nowadays, indices start at zero, it seems.
-	for setID = 0, C_EquipmentSet.GetNumEquipmentSets() - 1 do
+	for _, setID in ipairs(C_EquipmentSet.GetEquipmentSetIDs()) do
 		local setName, setIcon = C_EquipmentSet.GetEquipmentSetInfo(setID)
 		UpdateEquipmentSet(setName, setIcon)
 	end
